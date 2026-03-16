@@ -1,0 +1,8 @@
+setup.py
+src/app.py
+src/fl_client.py
+src/fl_server.py
+src/fl_server.egg-info/PKG-INFO
+src/fl_server.egg-info/SOURCES.txt
+src/fl_server.egg-info/dependency_links.txt
+src/fl_server.egg-info/top_level.txt

@@ -185,6 +185,71 @@ Health records are encrypted before leaving the device:
 
 ---
 
+## Federated Learning Server (Flower)
+
+A real federated learning simulation using the [Flower](https://flower.ai) framework lives in `packages/fl-server/`.
+
+### Architecture
+
+```
+TypeScript ComputationEngine
+    │  POST /fl/run  { contractId, numClients, numRounds }
+    ▼
+Flask HTTP bridge (port 5001)
+    │
+    ▼
+Flower simulation engine
+    ├── HealthDataClient (patient-0)  ← trains on anonymized silo data
+    ├── HealthDataClient (patient-1)
+    └── HealthDataClient (patient-N)
+         │  share only model weights (coef + intercept)
+         ▼
+    FedAvg aggregation → global model
+         │
+         ▼
+    { layerGradients, sampleCount, roundId, roundMetrics }
+```
+
+Raw patient data **never leaves** each client silo. Only model parameters (logistic regression coefficients) are shared with the server.
+
+### Setup
+
+```bash
+cd packages/fl-server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Start the FL server
+
+```bash
+cd packages/fl-server
+source .venv/bin/activate
+python3 src/app.py
+# Listening on http://localhost:5001
+```
+
+### Run FL tests
+
+```bash
+cd packages/fl-server
+source .venv/bin/activate
+python3 -m pytest tests/ -v
+```
+
+### Environment variable
+
+Set `FL_SERVER_URL` in the API environment to point to the FL server:
+
+```env
+FL_SERVER_URL=http://localhost:5001
+```
+
+If the FL server is unreachable, `ComputationEngine` falls back to simulated gradients so the rest of the pipeline (consent check, payment) still works in dev/test.
+
+---
+
 ## Anonymization Service
 
 Before any data is shared with researchers, it passes through the Python anonymizer:
