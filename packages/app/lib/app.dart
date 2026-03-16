@@ -22,9 +22,20 @@ class _HealthDataAppState extends State<HealthDataApp> {
       title: 'Health Data Wallet',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1A73E8),
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
       ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1A73E8),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
       home: !_biometricPassed
           ? BiometricAuthPage(
               onAuthenticated: () => setState(() => _biometricPassed = true),
@@ -32,11 +43,25 @@ class _HealthDataAppState extends State<HealthDataApp> {
           : BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
                 if (state is AuthAuthenticated) {
-                  return state.role == UserRole.patient
-                      ? const PatientShell()
-                      : const ResearcherShell();
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 350),
+                    transitionBuilder: (child, animation) => SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.05, 0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                          parent: animation, curve: Curves.easeOut)),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                    child: state.role == UserRole.patient
+                        ? const PatientShell(key: ValueKey('patient'))
+                        : const ResearcherShell(key: ValueKey('researcher')),
+                  );
                 }
-                return const RoleSelectPage();
+                return const AnimatedSwitcher(
+                  duration: Duration(milliseconds: 300),
+                  child: RoleSelectPage(key: ValueKey('role')),
+                );
               },
             ),
     );

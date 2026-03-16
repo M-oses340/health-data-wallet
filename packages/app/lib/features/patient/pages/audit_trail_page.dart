@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/patient_bloc.dart';
+import '../../auth/bloc/auth_bloc.dart';
 
 class AuditTrailPage extends StatelessWidget {
   const AuditTrailPage({super.key});
@@ -9,8 +11,8 @@ class AuditTrailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PatientBloc, PatientState>(
       builder: (context, state) {
-        if (state is PatientLoading) {
-          return const Center(child: CircularProgressIndicator());
+        if (state is PatientLoading || state is PatientInitial) {
+          return _SkeletonTimeline();
         }
         if (state is PatientError) {
           return Center(
@@ -26,20 +28,47 @@ class AuditTrailPage extends StatelessWidget {
         }
         if (state is PatientLoaded) {
           final entries = state.auditTrail;
+          final auth =
+              context.read<AuthBloc>().state as AuthAuthenticated;
+
           if (entries.isEmpty) {
-            return _EmptyAudit();
+            return RefreshIndicator(
+              onRefresh: () async {
+                context
+                    .read<PatientBloc>()
+                    .add(LoadPatientData(auth.did));
+                await context.read<PatientBloc>().stream.firstWhere(
+                    (s) => s is PatientLoaded || s is PatientError);
+              },
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 200),
+                  _EmptyAudit(),
+                ],
+              ),
+            );
           }
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            itemCount: entries.length,
-            itemBuilder: (_, i) {
-              final e = entries[i] as Map<String, dynamic>;
-              final isLast = i == entries.length - 1;
-              return _TimelineEntry(entry: e, isLast: isLast);
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              context.read<PatientBloc>().add(LoadPatientData(auth.did));
+              await context.read<PatientBloc>().stream.firstWhere(
+                  (s) => s is PatientLoaded || s is PatientError);
             },
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              itemCount: entries.length,
+              itemBuilder: (_, i) {
+                final e = entries[i] as Map<String, dynamic>;
+                final isLast = i == entries.length - 1;
+                return _TimelineEntry(entry: e, isLast: isLast);
+              },
+            ),
           );
         }
-        return const Center(child: CircularProgressIndicator());
+        return _SkeletonTimeline();
       },
     );
   }
@@ -68,7 +97,6 @@ class _TimelineEntry extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Timeline spine
           SizedBox(
             width: 40,
             child: Column(
@@ -84,22 +112,19 @@ class _TimelineEntry extends StatelessWidget {
                 ),
                 if (!isLast)
                   Expanded(
-                    child: Container(
-                      width: 2,
-                      color: scheme.outlineVariant,
-                    ),
+                    child: Container(width: 2, color: scheme.outlineVariant),
                   ),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          // Card
           Expanded(
             child: Padding(
               padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
               child: Card(
                 elevation: 0,
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                color:
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
                 child: Padding(
@@ -123,26 +148,42 @@ class _TimelineEntry extends StatelessWidget {
                       ),
                       if (contractId != null) ...[
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.link,
-                                size: 13, color: scheme.onSurfaceVariant),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                contractId.length > 24
-                                    ? '${contractId.substring(0, 12)}…${contractId.substring(contractId.length - 8)}'
-                                    : contractId,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color: scheme.onSurfaceVariant,
-                                        fontFamily: 'monospace'),
-                                overflow: TextOverflow.ellipsis,
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(
+                                ClipboardData(text: contractId));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Contract ID copied'),
+                                duration: Duration(seconds: 2),
                               ),
-                            ),
-                          ],
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              Icon(Icons.link,
+                                  size: 13,
+                                  color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  contractId.length > 24
+                                      ? '${contractId.substring(0, 12)}…${contractId.substring(contractId.length - 8)}'
+                                      : contractId,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                          fontFamily: 'monospace'),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Icon(Icons.copy,
+                                  size: 12,
+                                  color: scheme.onSurfaceVariant),
+                            ],
+                          ),
                         ),
                       ],
                     ],
@@ -180,7 +221,6 @@ class _EventConfig {
   const _EventConfig(this.icon, this.color);
 }
 
-
 class _EventChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -206,7 +246,84 @@ class _EventChip extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Skeleton
+// ---------------------------------------------------------------------------
+
+class _SkeletonTimeline extends StatefulWidget {
+  @override
+  State<_SkeletonTimeline> createState() => _SkeletonTimelineState();
+}
+
+class _SkeletonTimelineState extends State<_SkeletonTimeline>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat(reverse: true);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) {
+        final opacity = 0.3 + _anim.value * 0.4;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: List.generate(
+            5,
+            (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: scheme.surfaceContainerHighest
+                          .withValues(alpha: opacity),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest
+                            .withValues(alpha: opacity),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _EmptyAudit extends StatelessWidget {
+  const _EmptyAudit();
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -221,8 +338,7 @@ class _EmptyAudit extends StatelessWidget {
               shape: BoxShape.circle,
               color: scheme.primary.withValues(alpha: 0.08),
             ),
-            child:
-                Icon(Icons.history, size: 40, color: scheme.primary),
+            child: Icon(Icons.history, size: 40, color: scheme.primary),
           ),
           const SizedBox(height: 16),
           Text('No audit entries yet.',
