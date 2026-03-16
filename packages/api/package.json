@@ -9,8 +9,12 @@
   },
   "dependencies": {
     "@health-data/sdk": "*",
+    "@helia/unixfs": "^7.0.4",
     "@types/express": "^5.0.6",
-    "express": "^5.2.1"
+    "blockstore-fs": "^3.0.2",
+    "datastore-fs": "^11.0.2",
+    "express": "^5.2.1",
+    "helia": "^6.0.21"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
