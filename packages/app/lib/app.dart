@@ -42,6 +42,11 @@ class _HealthDataAppState extends State<HealthDataApp> {
             )
           : BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
+                if (state is AuthLoading) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
                 if (state is AuthAuthenticated) {
                   return AnimatedSwitcher(
                     duration: const Duration(milliseconds: 350),

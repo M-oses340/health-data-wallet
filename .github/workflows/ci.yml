@@ -26,6 +26,9 @@ jobs:
       - name: Run API tests
         run: npm test --workspace=packages/api
 
+      - name: Build API server
+        run: npm run build --workspace=packages/api
+
   # ─── Job 2: Solidity contracts (Hardhat — 18 tests) ─────────────────────────
   contracts:
     name: Contract Tests

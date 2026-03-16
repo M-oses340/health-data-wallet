@@ -1,19 +1,50 @@
 import 'package:dio/dio.dart';
+import 'env.dart';
 
-/// Thin wrapper around Dio that points at the local API server.
-/// Change [baseUrl] to your deployed API URL for production.
+/// Thin wrapper around Dio.
+/// Set API_URL at build time: --dart-define=API_URL=https://your-api.com
 class ApiClient {
-  static const String baseUrl = 'http://localhost:3000';
+  static String get baseUrl => Env.apiUrl;
 
   final Dio _dio;
+  String? _authToken;
 
   ApiClient()
       : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl,
+          baseUrl: Env.apiUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 30),
           headers: {'Content-Type': 'application/json'},
         ));
+
+  /// Set the JWT token after login — all subsequent requests will include it.
+  void setAuthToken(String token) {
+    _authToken = token;
+    _dio.options.headers['Authorization'] = 'Bearer $token';
+  }
+
+  void clearAuthToken() {
+    _authToken = null;
+    _dio.options.headers.remove('Authorization');
+  }
+
+  bool get isAuthenticated => _authToken != null;
+
+  // -------------------------------------------------------------------------
+  // Auth endpoints
+  // -------------------------------------------------------------------------
+
+  /// Register a new patient — returns { did, walletAddress, publicKey, token }
+  Future<Map<String, dynamic>> registerPatient() async {
+    final res = await _dio.post('/auth/register');
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Login with DID — returns { token }
+  Future<Map<String, dynamic>> login(String did, String role) async {
+    final res = await _dio.post('/auth/login', data: {'did': did, 'role': role});
+    return res.data as Map<String, dynamic>;
+  }
 
   // -------------------------------------------------------------------------
   // Patient endpoints

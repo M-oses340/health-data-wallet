@@ -3,14 +3,33 @@ app.py — Flask HTTP bridge between the TypeScript ComputationEngine and
 the Flower federated learning simulation.
 
 Endpoints:
-  POST /fl/run   { contractId, numClients?, numRounds? }
-               → { jobId, contractId, layerGradients, sampleCount, roundId, roundMetrics }
+  POST /fl/run      { contractId, numClients?, numRounds? }
+                  → { jobId, contractId, layerGradients, sampleCount, roundId, roundMetrics }
 
-  GET  /health  → { status: "ok" }
+  POST /anonymize   { text, patient_did, data_type, threshold? }
+                  → { success, qualityScore, anonymizedCid, rejectionReason? }
+
+  GET  /health    → { status: "ok" }
 """
+import hashlib
 import logging
+import sys
 import uuid
 from flask import Flask, jsonify, request
+
+# Anonymizer lives in packages/anonymizer/src — add to path when running standalone
+import os
+_anon_src = os.path.join(os.path.dirname(__file__), '..', '..', 'anonymizer', 'src')
+if os.path.isdir(_anon_src):
+    sys.path.insert(0, os.path.abspath(_anon_src))
+
+try:
+    from anonymizer_service import AnonymizerService
+    from anonymizer_types import ContentReference, DataType
+    _anonymizer = AnonymizerService()
+    _anon_available = True
+except ImportError:
+    _anon_available = False
 
 from fl_server import run_federated_learning
 
@@ -60,6 +79,48 @@ def fl_run():
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.post("/anonymize")
+def anonymize():
+    """
+    De-identify health text via the AnonymizerService.
+    Body: { text, patient_did, data_type, threshold? }
+    """
+    if not _anon_available:
+        return jsonify({"error": "Anonymizer not available"}), 503
+
+    body = request.get_json(force=True, silent=True) or {}
+    text = body.get("text", "")
+    patient_did = body.get("patient_did", "unknown")
+    data_type_str = body.get("data_type", "GENERAL")
+    threshold = float(body.get("threshold", 60.0))
+
+    try:
+        data_type = DataType(data_type_str)
+    except (ValueError, KeyError):
+        data_type = DataType.GENERAL
+
+    ref = ContentReference(
+        cid="raw-" + hashlib.sha256(text.encode()).hexdigest()[:16],
+        data_type=data_type,
+        uploaded_at=0,
+        encryption_key_ref="",
+    )
+
+    result = _anonymizer.deidentify(
+        text=text,
+        data_ref=ref,
+        patient_did=patient_did,
+        minimum_quality_threshold=threshold,
+    )
+
+    return jsonify({
+        "success": result.success,
+        "qualityScore": result.quality_score,
+        "anonymizedCid": result.anonymized_data_ref.cid,
+        "rejectionReason": result.rejection_reason,
+    })
 
 
 if __name__ == "__main__":

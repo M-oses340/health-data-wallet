@@ -18,9 +18,22 @@ abstract class AuthEvent extends Equatable {
   List<Object?> get props => [];
 }
 
+/// Register a brand-new patient account (generates DID + wallet on the API).
+class RegisterPatient extends AuthEvent {}
+
+/// Login with an existing DID.
+class LoginWithDID extends AuthEvent {
+  final String did;
+  final UserRole role;
+  const LoginWithDID(this.did, this.role);
+  @override
+  List<Object?> get props => [did, role];
+}
+
+/// Quick role select (dev / demo — skips server round-trip).
 class SelectRole extends AuthEvent {
   final UserRole role;
-  final String did; // patient DID or researcher wallet address
+  final String did;
   const SelectRole(this.role, this.did);
   @override
   List<Object?> get props => [role, did];
@@ -40,12 +53,22 @@ abstract class AuthState extends Equatable {
 
 class AuthInitial extends AuthState {}
 
+class AuthLoading extends AuthState {}
+
 class AuthAuthenticated extends AuthState {
   final UserRole role;
   final String did;
-  const AuthAuthenticated(this.role, this.did);
+  final String? walletAddress;
+  const AuthAuthenticated(this.role, this.did, {this.walletAddress});
   @override
-  List<Object?> get props => [role, did];
+  List<Object?> get props => [role, did, walletAddress];
+}
+
+class AuthError extends AuthState {
+  final String message;
+  const AuthError(this.message);
+  @override
+  List<Object?> get props => [message];
 }
 
 // ---------------------------------------------------------------------------
@@ -53,13 +76,50 @@ class AuthAuthenticated extends AuthState {
 // ---------------------------------------------------------------------------
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
-  // ignore: unused_field
   final ApiClient _api;
 
   AuthBloc(this._api) : super(AuthInitial()) {
-    on<SelectRole>((event, emit) {
+    on<RegisterPatient>(_onRegister);
+    on<LoginWithDID>(_onLogin);
+    on<SelectRole>(_onSelectRole);
+    on<SignOut>(_onSignOut);
+  }
+
+  Future<void> _onRegister(RegisterPatient event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      final data = await _api.registerPatient();
+      final token = data['token'] as String?;
+      if (token != null) _api.setAuthToken(token);
+      emit(AuthAuthenticated(
+        UserRole.patient,
+        data['did'] as String,
+        walletAddress: data['walletAddress'] as String?,
+      ));
+    } catch (e) {
+      emit(AuthError('Registration failed: $e'));
+    }
+  }
+
+  Future<void> _onLogin(LoginWithDID event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      final data = await _api.login(event.did, event.role.name);
+      final token = data['token'] as String?;
+      if (token != null) _api.setAuthToken(token);
       emit(AuthAuthenticated(event.role, event.did));
-    });
-    on<SignOut>((event, emit) => emit(AuthInitial()));
+    } catch (e) {
+      emit(AuthError('Login failed: $e'));
+    }
+  }
+
+  void _onSelectRole(SelectRole event, Emitter<AuthState> emit) {
+    // Demo / offline path — no server call
+    emit(AuthAuthenticated(event.role, event.did));
+  }
+
+  void _onSignOut(SignOut event, Emitter<AuthState> emit) {
+    _api.clearAuthToken();
+    emit(AuthInitial());
   }
 }
