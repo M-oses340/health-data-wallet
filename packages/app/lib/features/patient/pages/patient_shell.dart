@@ -33,9 +33,7 @@ class _PatientShellState extends State<PatientShell> {
             ),
             IconButton(
               icon: const Icon(Icons.logout),
-              onPressed: () {
-                context.read<AuthBloc>().add(SignOut());
-              },
+              onPressed: () => context.read<AuthBloc>().add(SignOut()),
             ),
           ],
         ),

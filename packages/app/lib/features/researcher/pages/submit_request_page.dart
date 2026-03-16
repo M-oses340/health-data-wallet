@@ -67,7 +67,7 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
               _field(_scopeCtrl, 'Permitted Scope', 'e.g. cardiology-research'),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _method,
+                initialValue: _method,
                 decoration: const InputDecoration(
                     labelText: 'Computation Method',
                     border: OutlineInputBorder()),

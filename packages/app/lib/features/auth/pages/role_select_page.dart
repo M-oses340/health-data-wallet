@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import '../bloc/auth_bloc.dart';
 
 class RoleSelectPage extends StatefulWidget {
@@ -23,8 +22,9 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
   void _enter() {
     final did = _didController.text.trim();
     if (did.isEmpty) return;
+    // Dispatching SelectRole causes AuthBloc → AuthAuthenticated,
+    // which BlocConsumer in app.dart picks up and swaps the page.
     context.read<AuthBloc>().add(SelectRole(_selected, did));
-    context.go(_selected == UserRole.patient ? '/patient' : '/researcher');
   }
 
   @override
@@ -48,7 +48,6 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
-                // Role toggle
                 SegmentedButton<UserRole>(
                   segments: const [
                     ButtonSegment(
