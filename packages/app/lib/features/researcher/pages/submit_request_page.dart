@@ -67,14 +67,13 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
               _field(_scopeCtrl, 'Permitted Scope', 'e.g. cardiology-research'),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                initialValue: _method,
                 decoration: const InputDecoration(
                     labelText: 'Computation Method',
                     border: OutlineInputBorder()),
                 items: ['FEDERATED_LEARNING', 'ZKP']
                     .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                     .toList(),
-                onChanged: (v) => setState(() => _method = v!),
+                onChanged: (v) => setState(() => _method = v ?? _method),
               ),
               const SizedBox(height: 16),
               _field(_durationCtrl, 'Access Duration (seconds)', '86400',

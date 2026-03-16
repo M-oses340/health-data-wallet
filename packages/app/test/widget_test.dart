@@ -5,7 +5,7 @@ import 'package:health_data_wallet/core/api_client.dart';
 import 'package:health_data_wallet/features/auth/bloc/auth_bloc.dart';
 
 void main() {
-  testWidgets('Role select page renders', (WidgetTester tester) async {
+  testWidgets('Biometric auth page renders first', (WidgetTester tester) async {
     await tester.pumpWidget(
       MultiRepositoryProvider(
         providers: [
@@ -20,7 +20,8 @@ void main() {
       ),
     );
 
+    // Biometric page is the entry point
     expect(find.text('Health Data Wallet'), findsOneWidget);
-    expect(find.text('Enter'), findsOneWidget);
+    expect(find.text('Authenticate'), findsOneWidget);
   });
 }
