@@ -1,0 +1,20 @@
+{
+  "name": "@health-data/contracts",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "@health-data/sdk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/jest": "^29.5.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "fast-check": "^3.19.0",
+    "hardhat": "^2.22.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  }
+}
