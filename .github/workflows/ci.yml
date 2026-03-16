@@ -76,8 +76,33 @@ jobs:
         run: python3 -m pytest tests/ -v
         working-directory: packages/anonymizer
 
-  # ─── Job 4: Flower FL server (Pytest — 14 tests) ────────────────────────────
-  fl-server:
+  # ─── Job 4: Flutter app (unit + widget tests) ───────────────────────────────
+  flutter:
+    name: Flutter Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.22.x"
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+        working-directory: packages/app
+
+      - name: Analyze
+        run: flutter analyze
+        working-directory: packages/app
+
+      - name: Run tests
+        run: flutter test
+        working-directory: packages/app
+
+  # ─── Job 5: Flower FL server (Pytest — 14 tests) ────────────────────────────
+  fl_server:
     name: FL Server Tests
     runs-on: ubuntu-latest
     steps:

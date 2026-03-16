@@ -149,16 +149,20 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
                     const SizedBox(height: 24),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.lock_outline,
                             size: 14, color: scheme.onSurfaceVariant),
                         const SizedBox(width: 4),
-                        Text(
-                          'End-to-end encrypted · HIPAA compliant',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                  ),
+                        Flexible(
+                          child: Text(
+                            'End-to-end encrypted · HIPAA compliant',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
