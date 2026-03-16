@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Job 1: TypeScript API (Jest — 142 tests) ───────────────────────────────
+  api:
+    name: API Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests
+        run: npm test --workspace=packages/api
+
+  # ─── Job 2: Solidity contracts (Hardhat — 18 tests) ─────────────────────────
+  contracts:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+        working-directory: packages/contracts
+
+      - name: Run contract tests
+        run: npx hardhat test
+        working-directory: packages/contracts
+
+  # ─── Job 3: Python anonymizer (Pytest + Hypothesis — 23 tests) ──────────────
+  anonymizer:
+    name: Anonymizer Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: packages/anonymizer/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        working-directory: packages/anonymizer
+
+      - name: Download spaCy model
+        run: python3 -m spacy download en_core_web_lg
+        working-directory: packages/anonymizer
+
+      - name: Run anonymizer tests
+        run: python3 -m pytest tests/ -v
+        working-directory: packages/anonymizer
+
+  # ─── Job 4: Flower FL server (Pytest — 14 tests) ────────────────────────────
+  fl-server:
+    name: FL Server Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: packages/fl-server/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+          pip install -e .
+        working-directory: packages/fl-server
+
+      - name: Run FL server tests
+        run: python3 -m pytest tests/ -v
+        working-directory: packages/fl-server
