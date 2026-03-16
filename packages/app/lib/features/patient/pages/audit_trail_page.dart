@@ -13,55 +13,229 @@ class AuditTrailPage extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (state is PatientError) {
-          return Center(child: Text('Error: ${state.message}'));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                Text('Error: ${state.message}'),
+              ],
+            ),
+          );
         }
         if (state is PatientLoaded) {
           final entries = state.auditTrail;
           if (entries.isEmpty) {
-            return const Center(child: Text('No audit entries yet.'));
+            return _EmptyAudit();
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             itemCount: entries.length,
-            separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (_, i) {
               final e = entries[i] as Map<String, dynamic>;
-              return ListTile(
-                leading: _icon(e['eventType'] as String?),
-                title: Text(e['eventType'] ?? '—'),
-                subtitle: e['contractId'] != null
-                    ? Text('Contract: ${e['contractId']}')
-                    : null,
-                trailing: Text(
-                  e['timestamp'] != null
-                      ? DateTime.fromMillisecondsSinceEpoch(e['timestamp'] as int)
-                          .toLocal()
-                          .toString()
-                          .substring(0, 16)
-                      : '',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              );
+              final isLast = i == entries.length - 1;
+              return _TimelineEntry(entry: e, isLast: isLast);
             },
           );
         }
-        return const SizedBox.shrink();
+        return const Center(child: CircularProgressIndicator());
       },
     );
   }
+}
 
-  Widget _icon(String? eventType) {
-    switch (eventType) {
+class _TimelineEntry extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  final bool isLast;
+  const _TimelineEntry({required this.entry, required this.isLast});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final eventType = entry['eventType'] as String? ?? 'UNKNOWN';
+    final config = _eventConfig(eventType);
+    final contractId = entry['contractId']?.toString();
+    final ts = entry['timestamp'];
+    final dateStr = ts != null
+        ? DateTime.fromMillisecondsSinceEpoch(ts as int)
+            .toLocal()
+            .toString()
+            .substring(0, 16)
+        : '—';
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Timeline spine
+          SizedBox(
+            width: 40,
+            child: Column(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: config.color.withValues(alpha: 0.15),
+                  ),
+                  child: Icon(config.icon, size: 18, color: config.color),
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: scheme.outlineVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Card
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+              child: Card(
+                elevation: 0,
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _EventChip(
+                                label: eventType, color: config.color),
+                          ),
+                          Text(dateStr,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                      color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                      if (contractId != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.link,
+                                size: 13, color: scheme.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                contractId.length > 24
+                                    ? '${contractId.substring(0, 12)}…${contractId.substring(contractId.length - 8)}'
+                                    : contractId,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        fontFamily: 'monospace'),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _EventConfig _eventConfig(String type) {
+    switch (type) {
       case 'CONSENT_GRANTED':
-        return const Icon(Icons.check_circle, color: Colors.green);
+        return const _EventConfig(Icons.check_circle_outline, Colors.green);
       case 'CONSENT_REVOKED':
-        return const Icon(Icons.cancel, color: Colors.red);
+        return const _EventConfig(Icons.cancel_outlined, Colors.red);
       case 'DIVIDEND_PAID':
-        return const Icon(Icons.payments, color: Colors.blue);
+        return const _EventConfig(Icons.payments_outlined, Colors.blue);
       case 'DATA_ANONYMIZED':
-        return const Icon(Icons.security, color: Colors.orange);
+        return const _EventConfig(Icons.security, Colors.orange);
+      case 'DATA_ACCESSED':
+        return const _EventConfig(Icons.visibility_outlined, Colors.purple);
       default:
-        return const Icon(Icons.info_outline);
+        return const _EventConfig(Icons.info_outline, Colors.grey);
     }
+  }
+}
+
+class _EventConfig {
+  final IconData icon;
+  final Color color;
+  const _EventConfig(this.icon, this.color);
+}
+
+
+class _EventChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _EventChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label.replaceAll('_', ' '),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+class _EmptyAudit extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: scheme.primary.withValues(alpha: 0.08),
+            ),
+            child:
+                Icon(Icons.history, size: 40, color: scheme.primary),
+          ),
+          const SizedBox(height: 16),
+          Text('No audit entries yet.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  )),
+          const SizedBox(height: 4),
+          Text('Activity on your data will appear here.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  )),
+        ],
+      ),
+    );
   }
 }
