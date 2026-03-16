@@ -4,8 +4,9 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@health-data/sdk": ["../sdk/src"]
+      "@health-data/sdk": ["../sdk/dist"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/__mocks__/**"]
 }
