@@ -9,12 +9,13 @@ A full-stack, privacy-preserving platform that lets patients own, control, and e
 ```
 health-data-wallet/
 ├── packages/
-│   ├── api/          # TypeScript/Node.js backend (Express)
+│   ├── api/          # TypeScript/Node.js backend (Express + SQLite)
 │   ├── app/          # Flutter mobile app (iOS + Android)
 │   ├── contracts/    # Solidity smart contracts (Hardhat)
 │   ├── anonymizer/   # Python PII anonymization service (Presidio)
+│   ├── fl-server/    # Python Flower federated learning server
 │   └── sdk/          # Shared TypeScript types
-├── package.json      # npm workspaces root
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -26,17 +27,19 @@ Flutter App
     ▼
 Express API  ──────────────────────────────────────────────────────────────┐
     │                                                                       │
-    ├── PatientProfileRepository   (patient identity + consent state)      │
-    ├── DataVaultService           (AES-256-GCM + ECIES → IPFS via Helia)  │
-    ├── ComputationEngine          (Federated Learning / ZKP dispatch)     │
-    ├── MarketplaceService         (dataset discovery + contract creation) │
+    ├── PatientProfileRepository   (SQLite — patient identity + consent)   │
+    ├── DataVaultService           (AES-256-GCM + ECIES content store)     │
+    ├── ComputationEngine          (FL / ZKP dispatch + vault data feed)   │
+    ├── MarketplaceService         (SQLite — dataset discovery)            │
     ├── WalletService              (ETH balance + dividend tracking)       │
-    ├── AuditTrailService          (immutable event log)                   │
+    ├── AuditTrailService          (SQLite — immutable event log)          │
     ├── ComplianceService          (HIPAA / GDPR rule engine)              │
+    ├── ContractAdapters           (ethers.js wrappers — real or stub)     │
     └── PlatformOrchestrator       (end-to-end workflow coordinator)       │
                                                                             │
-Python Anonymizer ◄─────────────────────────────────────────────────────── ┘
-    │  (Presidio NLP — strips PII before data leaves the vault)
+Python FL Server ◄──────────────────────────────────────────────────────── ┘
+    │  POST /fl/run  { contractId, numClients, numRounds, patientData? }
+    │  POST /anonymize  (Presidio NLP — strips PII before data leaves vault)
     ▼
 Ethereum Smart Contracts (Hardhat / local testnet)
     ├── ConsentRegistry   — on-chain consent lifecycle
@@ -51,11 +54,11 @@ Ethereum Smart Contracts (Hardhat / local testnet)
 | Layer | Technology |
 |---|---|
 | Mobile | Flutter 3, BLoC, Dio, local_auth |
-| Backend | Node.js, TypeScript, Express 5 |
-| Storage | IPFS (Helia + UnixFS), local blockstore/datastore |
+| Backend | Node.js 20, TypeScript, Express 5 |
+| Persistence | SQLite via better-sqlite3 (WAL mode) |
 | Encryption | AES-256-GCM (data), ECIES (key wrapping) |
-| Smart Contracts | Solidity ^0.8.24, Hardhat, Ethers.js |
-| Anonymization | Python 3, Microsoft Presidio, spaCy |
+| Smart Contracts | Solidity ^0.8.24, Hardhat, Ethers.js v6 |
+| Anonymization | Python 3, Microsoft Presidio, spaCy en_core_web_lg |
 | Federated Learning | Flower (flwr), scikit-learn, NumPy |
 | Testing | Jest + fast-check (PBT), Pytest + Hypothesis, Hardhat tests |
 | Containerisation | Docker, Docker Compose |
@@ -64,17 +67,15 @@ Ethereum Smart Contracts (Hardhat / local testnet)
 
 ## Quick Start (Docker)
 
-The fastest way to run the full stack locally:
-
 ```bash
-# Copy env template (optional for local dev — defaults work out of the box)
+# Copy env template (optional — defaults work out of the box)
 cp packages/api/.env.example packages/api/.env
 
 # Build and start all services
 docker compose up --build
 ```
 
-Services start in dependency order — hardhat and fl-server must pass their healthchecks before the API comes up.
+Services start in dependency order: `hardhat` → `contracts-deploy` → `fl-server` → `api`.
 
 | Service | URL | Notes |
 |---|---|---|
@@ -90,11 +91,23 @@ curl -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# Stop everything
+# Stop everything (data persists in the api_data Docker volume)
 docker compose down
 ```
 
 > Note: the first build takes ~20 minutes — the FL server downloads the spaCy `en_core_web_lg` model (588 MB). Subsequent builds use Docker layer cache and complete in under 2 minutes.
+
+### Persistent storage
+
+The SQLite database is stored in the `api_data` Docker volume at `/app/data/platform.db`. Data survives container restarts. To wipe it:
+
+```bash
+docker compose down -v
+```
+
+### Smart contract auto-deploy
+
+The `contracts-deploy` service runs `deploy.ts` against the local Hardhat node on every `docker compose up` and writes `deployed-addresses.json` into the API container. The API's `ContractAdapters` picks this up automatically — no manual deploy step needed.
 
 ---
 
@@ -102,23 +115,15 @@ docker compose down
 
 ### Prerequisites
 
-- Node.js >= 18
-- npm >= 9
+- Node.js >= 18, npm >= 9
 - Flutter >= 3.0
 - Python >= 3.10
-- pip / virtualenv
-
----
-
-## Getting Started
 
 ### 1. Install dependencies
 
 ```bash
-# Root (API + contracts + SDK)
 npm install
 
-# Python anonymizer
 cd packages/anonymizer
 pip install -r requirements.txt
 python -m spacy download en_core_web_lg
@@ -127,31 +132,31 @@ python -m spacy download en_core_web_lg
 ### 2. Run the API
 
 ```bash
-cd packages/api
-npm run build
-node dist/index.js
+npm run build --workspace=packages/api
+node packages/api/dist/server.js
 # Listens on http://localhost:3000
 ```
 
-### 3. Start the local blockchain
-
-Open a dedicated terminal:
+### 3. Start the local blockchain + deploy contracts
 
 ```bash
-cd packages/contracts
-npx hardhat node
+# Terminal 1
+cd packages/contracts && npx hardhat node
+
+# Terminal 2
+cd packages/contracts && npx hardhat run scripts/deploy.ts --network localhost
+# Writes deployed-addresses.json — API picks it up automatically
 ```
 
-### 4. Deploy contracts
-
-In a second terminal:
+### 4. Start the FL server
 
 ```bash
-cd packages/contracts
-npx hardhat run scripts/deploy.ts --network localhost
+cd packages/fl-server
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python3 src/app.py
+# Listening on http://localhost:5001
 ```
-
-Deployed addresses are saved to `packages/contracts/deployed-addresses.json`.
 
 ### 5. Run the Flutter app
 
@@ -163,11 +168,102 @@ flutter run
 
 ---
 
+## Environment Variables
+
+`packages/api/.env`:
+
+```env
+PORT=3000
+JWT_SECRET=dev-secret-change-in-prod
+FL_SERVER_URL=http://localhost:5001
+BLOCKCHAIN_RPC_URL=http://localhost:8545
+DB_PATH=./data/platform.db
+```
+
+`packages/contracts/.env`:
+
+```env
+PRIVATE_KEY=<deployer-private-key>
+RPC_URL=http://127.0.0.1:8545
+```
+
+---
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | — | Liveness probe |
+| POST | `/auth/register` | — | Register new patient — returns DID + JWT |
+| POST | `/auth/login` | — | Login with DID — returns JWT |
+| GET | `/patient/:did/payments` | Bearer | Payment history |
+| GET | `/patient/:did/audit-trail` | Bearer | Full audit log |
+| POST | `/vault/upload` | Bearer | Encrypt + anonymize + list data |
+| GET | `/marketplace/datasets` | — | Search dataset listings (`?category=&dataType=`) |
+| POST | `/marketplace/requests` | Bearer | Submit computation request (triggers FL or ZKP) |
+| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+
+### Example: full patient flow
+
+```bash
+# Register
+PATIENT=$(curl -s -X POST http://localhost:3000/auth/register)
+DID=$(echo $PATIENT | grep -o '"did":"[^"]*"' | cut -d'"' -f4)
+TOKEN=$(echo $PATIENT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+# Upload health data
+DATA=$(echo -n '{"heartRate":72,"bp":"120/80"}' | base64)
+curl -s -X POST http://localhost:3000/vault/upload \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{\"patientDID\":\"$DID\",\"data\":\"$DATA\",\"dataType\":\"HEALTH_METRICS\",\"category\":\"vitals\"}"
+
+# Browse marketplace
+curl -s http://localhost:3000/marketplace/datasets
+
+# Submit FL computation
+curl -s -X POST http://localhost:3000/marketplace/requests \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"contractId":"contract-001"}'
+
+# Audit trail
+curl -s http://localhost:3000/patient/$DID/audit-trail \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+## Federated Learning
+
+The FL server runs a Flower simulation in-process — no real network sockets needed. Raw patient data **never leaves** each client silo; only model parameters (logistic regression coefficients) are shared.
+
+```
+ComputationEngine
+    │  POST /fl/run  { contractId, numClients, numRounds, patientData? }
+    ▼
+Flask bridge (port 5001)
+    ▼
+Flower simulation
+    ├── HealthDataClient (patient-0)  ← real vault records or synthetic fallback
+    ├── HealthDataClient (patient-1)
+    └── HealthDataClient (patient-N)
+         │  share only model weights
+         ▼
+    FedAvg aggregation → global model
+         ▼
+    { layerGradients, sampleCount, roundId, roundMetrics }
+```
+
+When `patientData` is provided (extracted from the vault by `IVaultDataProvider`), each client trains on real anonymized records. If a silo has fewer than 4 records, it falls back to synthetic data automatically.
+
+If the FL server is unreachable, `ComputationEngine` falls back to simulated gradients so the consent-check and payment pipeline still works in dev/test.
+
+---
+
 ## Smart Contracts
 
 ### ConsentRegistry
-
-Manages the full consent lifecycle between patients and researchers.
 
 ```
 PENDING_SIGNATURE → ACTIVE → COMPLETED
@@ -191,118 +287,44 @@ Holds researcher funds in escrow until computation completes. Releases dividend 
 
 Routes ETH dividends from escrow to patient wallets. Emits `DividendPaid` events consumed by the audit trail.
 
----
-
-## On-chain Demo
-
-With the Hardhat node running and contracts deployed:
+### On-chain demo
 
 ```bash
 cd packages/contracts
 npx hardhat run scripts/interact.ts --network localhost
 ```
 
-This runs the full lifecycle:
+---
 
-1. Researcher calls `createContract`
-2. Patient calls `signContract`
-3. Researcher escrows `0.1 ETH` via `DataEscrow`
-4. `releaseDividend` — patient receives `0.1 ETH`, `DividendPaid` event emitted
-5. Patient calls `revokeConsent` on a second contract
-6. `processRevocationRefund` — researcher refunded `0.1 ETH`
+## Persistence (SQLite)
+
+All platform state is stored in a single SQLite database (`better-sqlite3`, WAL mode):
+
+| Table | Contents |
+|---|---|
+| `patient_profiles` | DID, wallet address, public key, data references |
+| `marketplace_listings` | Category, data type, quality score, available methods |
+| `audit_trail` | Immutable event log — consent, uploads, computations, payments |
+
+The database path is controlled by `DB_PATH` (default: `./data/platform.db`).
 
 ---
 
-## Data Vault
-
-Health records are encrypted before leaving the device:
-
-1. Data encrypted with AES-256-GCM (random key per record)
-2. Encryption key wrapped with patient's ECIES public key
-3. Ciphertext stored on IPFS via Helia — real CID returned
-4. Metadata (IV, wrapped key, CID) stored in local sidecar map
-5. Access requires a signed JWT token validated against the consent registry
-
----
-
-## Federated Learning Server (Flower)
-
-A real federated learning simulation using the [Flower](https://flower.ai) framework lives in `packages/fl-server/`.
-
-### Architecture
-
-```
-TypeScript ComputationEngine
-    │  POST /fl/run  { contractId, numClients, numRounds }
-    ▼
-Flask HTTP bridge (port 5001)
-    │
-    ▼
-Flower simulation engine
-    ├── HealthDataClient (patient-0)  ← trains on anonymized silo data
-    ├── HealthDataClient (patient-1)
-    └── HealthDataClient (patient-N)
-         │  share only model weights (coef + intercept)
-         ▼
-    FedAvg aggregation → global model
-         │
-         ▼
-    { layerGradients, sampleCount, roundId, roundMetrics }
-```
-
-Raw patient data **never leaves** each client silo. Only model parameters (logistic regression coefficients) are shared with the server.
-
-### Setup
+## Running Tests
 
 ```bash
-cd packages/fl-server
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# API (Jest — 142 tests)
+npm test --workspace=packages/api
+
+# Smart contracts (Hardhat — 18 tests)
+npx hardhat test --project packages/contracts
+
+# Anonymizer (Pytest + Hypothesis — 23 tests)
+cd packages/anonymizer && python -m pytest tests/ -v
+
+# FL server (Pytest — 14 tests)
+cd packages/fl-server && python -m pytest tests/ -v
 ```
-
-### Start the FL server
-
-```bash
-cd packages/fl-server
-source .venv/bin/activate
-python3 src/app.py
-# Listening on http://localhost:5001
-```
-
-### Run FL tests
-
-```bash
-cd packages/fl-server
-source .venv/bin/activate
-python3 -m pytest tests/ -v
-```
-
-### Environment variable
-
-Set `FL_SERVER_URL` in the API environment to point to the FL server:
-
-```env
-FL_SERVER_URL=http://localhost:5001
-```
-
-If the FL server is unreachable, `ComputationEngine` falls back to simulated gradients so the rest of the pipeline (consent check, payment) still works in dev/test.
-
----
-
-## Anonymization Service
-
-Before any data is shared with researchers, it passes through the Python anonymizer:
-
-```bash
-cd packages/anonymizer
-python -m pytest tests/
-```
-
-Uses Microsoft Presidio with spaCy `en_core_web_lg` to detect and redact:
-- Names, dates of birth, addresses
-- Phone numbers, email addresses, SSNs
-- Medical record numbers and other PHI
 
 ---
 
@@ -311,104 +333,35 @@ Uses Microsoft Presidio with spaCy `en_core_web_lg` to detect and redact:
 ### User flow
 
 ```
-BiometricAuthPage
-    │  (fingerprint / face ID)
-    ▼
-RoleSelectPage
-    │
+BiometricAuthPage → RoleSelectPage
     ├── Patient → PatientShell
-    │               ├── Payments tab  (earnings summary + history)
+    │               ├── Payments tab  (earnings + history)
     │               └── Audit Trail   (timeline of all data events)
-    │
     └── Researcher → ResearcherShell
                         ├── Datasets tab   (search + filter marketplace)
                         └── New Request    (submit computation contract)
 ```
 
-### Features
-
-- Biometric auth with animated pulse rings, elastic success, shake on failure
-- Gradient headers with truncated DID / wallet address (tap to copy)
-- Dark mode — follows system theme automatically
-- Skeleton shimmer loaders while data fetches
-- Pull-to-refresh on payments and audit trail
-- Payment badge on tab icon showing unread count
-- Color-coded timeline audit trail with event chips
-- Live dividend preview card on the request form
-
----
-
-## Running Tests
-
-### API (TypeScript + property-based tests)
+The `ApiClient` (`packages/app/lib/core/api_client.dart`) connects to the live API. Set the base URL at build time:
 
 ```bash
-cd packages/api
-npm test
-# 142 tests passing
-```
-
-### Smart contracts
-
-```bash
-cd packages/contracts
-npx hardhat test
-# 18 contract tests passing
-```
-
-### Anonymizer (Python + Hypothesis PBT)
-
-```bash
-cd packages/anonymizer
-python -m pytest tests/ -v
-# 23 tests passing
+flutter run --dart-define=API_URL=http://your-api-host:3000
 ```
 
 ---
 
-## API Endpoints
+## CI/CD
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/health` | — | Liveness probe |
-| POST | `/auth/register` | — | Register new patient — returns DID + JWT |
-| POST | `/auth/login` | — | Login with DID — returns JWT |
-| GET | `/patient/:did/payments` | Bearer | Payment history |
-| GET | `/patient/:did/audit-trail` | Bearer | Full audit log |
-| POST | `/vault/upload` | Bearer | Encrypt + anonymize + pin to IPFS |
-| GET | `/marketplace/datasets` | — | Search dataset listings |
-| POST | `/marketplace/requests` | Bearer | Submit computation request |
-| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+GitHub Actions runs 6 parallel jobs on every push to `main`:
 
----
-
-## Environment Variables
-
-Create `packages/api/.env`:
-
-```env
-PORT=3000
-JWT_SECRET=dev-secret-change-in-prod
-FL_SERVER_URL=http://localhost:5001
-BLOCKCHAIN_RPC_URL=http://localhost:8545
-```
-
-Create `packages/contracts/.env`:
-
-```env
-PRIVATE_KEY=<deployer-private-key>
-RPC_URL=http://127.0.0.1:8545
-```
-
----
-
-## Deployed Contract Addresses (local testnet)
-
-| Contract | Address |
+| Job | What it tests |
 |---|---|
-| ConsentRegistry | `0x5FbDB2315678afecb367f032d93F642f64180aa3` |
-| DataEscrow | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` |
-| PaymentRouter | `0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` |
+| API Tests | Jest — 142 TypeScript tests |
+| Contract Tests | Hardhat — 18 Solidity tests |
+| Anonymizer Tests | Pytest + Hypothesis — 23 Python tests |
+| Flutter Tests | `flutter analyze` + `flutter test` |
+| Docker Smoke Test | Full `docker compose up` + register → upload → FL → hardhat |
+| FL Server Tests | Pytest — 14 FL server tests |
 
 ---
 
