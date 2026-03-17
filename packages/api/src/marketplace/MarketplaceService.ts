@@ -60,6 +60,14 @@ export class MarketplaceService {
     }));
   }
 
+
+  /** Increment record_count for all listings matching category + dataType. */
+  incrementRecordCount(category: string, dataType: DataType): void {
+    db.prepare(
+      'UPDATE marketplace_listings SET record_count = record_count + 1 WHERE LOWER(category) = LOWER(?) AND data_type = ?'
+    ).run(category, dataType);
+  }
+
   submitComputationRequest(request: Partial<ComputationRequest>): RequestSubmission {
     const fieldErrors = this._validateRequest(request);
     if (Object.keys(fieldErrors).length > 0) {

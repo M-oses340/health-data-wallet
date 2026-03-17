@@ -311,3 +311,82 @@ if (require.main === module) {
   const PORT = process.env.PORT ?? 3000;
   app.listen(PORT, () => console.log(`API server running on port ${PORT}`));
 }
+
+
+// ---------------------------------------------------------------------------
+// Marketplace seed — runs once on startup, idempotent
+// ---------------------------------------------------------------------------
+
+function seedMarketplace(): void {
+  const existing = marketplace.searchDatasets({});
+  if (existing.length > 0) return; // already seeded
+
+  const listings: Array<Parameters<typeof marketplace.registerDataset>[0]> = [
+    // EHR datasets
+    {
+      category: 'cardiology',
+      dataType: 'EHR',
+      minQualityScore: 70,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING', 'ZKP'],
+    },
+    {
+      category: 'endocrinology',
+      dataType: 'EHR',
+      minQualityScore: 70,
+      recordCount: 0,
+      availableMethods: ['ZKP'],
+    },
+    {
+      category: 'oncology',
+      dataType: 'EHR',
+      minQualityScore: 75,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING'],
+    },
+    // Wearable datasets
+    {
+      category: 'vitals',
+      dataType: 'WEARABLE',
+      minQualityScore: 60,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING', 'ZKP'],
+    },
+    {
+      category: 'activity',
+      dataType: 'WEARABLE',
+      minQualityScore: 50,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING'],
+    },
+    {
+      category: 'sleep',
+      dataType: 'WEARABLE',
+      minQualityScore: 55,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING', 'ZKP'],
+    },
+    // Genetic datasets
+    {
+      category: 'genomics',
+      dataType: 'GENETIC',
+      minQualityScore: 80,
+      recordCount: 0,
+      availableMethods: ['ZKP'],
+    },
+    {
+      category: 'pharmacogenomics',
+      dataType: 'GENETIC',
+      minQualityScore: 80,
+      recordCount: 0,
+      availableMethods: ['FEDERATED_LEARNING', 'ZKP'],
+    },
+  ];
+
+  for (const listing of listings) {
+    marketplace.registerDataset(listing);
+  }
+  console.log(`[marketplace] Seeded ${listings.length} dataset listings.`);
+}
+
+seedMarketplace();
