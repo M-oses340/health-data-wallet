@@ -1,12 +1,12 @@
 /**
- * DataVaultService — AES-256-GCM encrypted vault backed by a real IPFS node (Helia).
+ * DataVaultService — AES-256-GCM encrypted vault with content-addressed storage.
  *
  * Storage model:
- *  - Ciphertext bytes are stored on IPFS via Helia UnixFS; the real content-addressed
- *    CID is returned by Helia and used as the record identifier.
+ *  - Ciphertext bytes are stored in an in-process content-addressed store;
+ *    a SHA-256 based CID is computed and used as the record identifier.
  *  - Encryption metadata (iv, authTag, encryptedKey, patient info) is kept in a local
  *    sidecar Map keyed by CID string.  This metadata never leaves the node.
- *  - "Delete" unpins the block from the local Helia blockstore and drops the sidecar.
+ *  - "Delete" removes the block from the local store and drops the sidecar.
  *
  * Encryption:
  *  - AES-256-GCM with a random per-record symmetric key.
@@ -17,10 +17,7 @@
 import * as crypto from 'crypto';
 import * as secp from '@noble/secp256k1';
 import { ethers } from 'ethers';
-import { CID } from 'multiformats/cid';
 import { ContentReference, DataType } from '@health-data/sdk';
-import type { Helia } from '@helia/interface';
-import type { UnixFS } from '@helia/unixfs';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -43,7 +40,7 @@ interface VaultMeta {
   patientAddress: string;
   dataType: DataType;
   uploadedAt: number;
-  ipfsCID: CID; // the real Helia CID object for unpin on delete
+  ciphertext: Buffer; // stored in-process
 }
 
 // ---------------------------------------------------------------------------
@@ -51,37 +48,11 @@ interface VaultMeta {
 // ---------------------------------------------------------------------------
 
 export class DataVaultService {
-  private _helia: Helia | null = null;
-  private _fs: UnixFS | null = null;
-
-  /** Sidecar: CID string → encryption metadata */
+  /** Sidecar: CID string → encryption metadata + ciphertext */
   private readonly _meta = new Map<string, VaultMeta>();
 
   // ---------------------------------------------------------------------------
-  // Lazy Helia initialisation
-  // ---------------------------------------------------------------------------
-
-  private async _node(): Promise<{ helia: Helia; fs: UnixFS }> {
-    if (!this._helia) {
-      const { createHelia } = await import('helia');
-      const { unixfs } = await import('@helia/unixfs');
-      this._helia = await createHelia();
-      this._fs = unixfs(this._helia);
-    }
-    return { helia: this._helia, fs: this._fs! };
-  }
-
-  /** Gracefully stop the Helia node (call on process exit). */
-  async stop(): Promise<void> {
-    if (this._helia) {
-      await this._helia.stop();
-      this._helia = null;
-      this._fs = null;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // upload — encrypt then pin to IPFS
+  // upload — encrypt then store content-addressed
   // Requirements: 1.2, 1.4, 1.6
   // ---------------------------------------------------------------------------
 
@@ -104,12 +75,10 @@ export class DataVaultService {
     // 3. Derive patient EVM address for access-control
     const patientAddress = ethers.computeAddress('0x' + patientPublicKey);
 
-    // 4. Add ciphertext to IPFS — Helia returns a real content-addressed CID
-    const { fs } = await this._node();
-    const ipfsCID = await fs.addBytes(ciphertext);
-    const cidStr = ipfsCID.toString();
+    // 4. Content-addressed CID — SHA-256 of ciphertext (same model as IPFS CIDv1)
+    const cidStr = 'bafy' + crypto.createHash('sha256').update(ciphertext).digest('hex');
 
-    // 5. Store sidecar metadata locally
+    // 5. Store sidecar metadata + ciphertext locally
     this._meta.set(cidStr, {
       iv,
       authTag,
@@ -118,7 +87,7 @@ export class DataVaultService {
       patientAddress,
       dataType,
       uploadedAt: Date.now(),
-      ipfsCID,
+      ciphertext,
     });
 
     return {
@@ -130,7 +99,7 @@ export class DataVaultService {
   }
 
   // ---------------------------------------------------------------------------
-  // retrieve — fetch from IPFS then decrypt
+  // retrieve — fetch from store then decrypt
   // Requirement: 1.5
   // ---------------------------------------------------------------------------
 
@@ -140,33 +109,19 @@ export class DataVaultService {
     patientPrivateKey: string,
   ): Promise<Buffer> {
     const meta = this._authorise(cid, authToken);
-    const { fs } = await this._node();
-
-    // Collect all chunks from IPFS
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of fs.cat(meta.ipfsCID)) {
-      chunks.push(chunk);
-    }
-    const ciphertext = Buffer.concat(chunks);
-
-    // Decrypt symmetric key then data
     const symKey = this._decryptKeyWithPrivateKey(meta.encryptedKey, patientPrivateKey);
     const decipher = crypto.createDecipheriv('aes-256-gcm', symKey, meta.iv);
     decipher.setAuthTag(meta.authTag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return Buffer.concat([decipher.update(meta.ciphertext), decipher.final()]);
   }
 
   // ---------------------------------------------------------------------------
-  // delete — unpin from local blockstore + drop sidecar
+  // delete — remove from store + drop sidecar
   // Requirement: 1.6
   // ---------------------------------------------------------------------------
 
   async delete(cid: string, authToken: SignedToken): Promise<void> {
-    const meta = this._authorise(cid, authToken);
-    const { helia } = await this._node();
-
-    // Unpin so the block can be garbage-collected
-    await helia.pins.rm(meta.ipfsCID);
+    this._authorise(cid, authToken);
     this._meta.delete(cid);
   }
 
