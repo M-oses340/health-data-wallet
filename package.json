@@ -10,6 +10,9 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
+  "dependencies": {
+    "@noble/secp256k1": "^2.1.0"
+  },
   "devDependencies": {
     "typescript": "^5.4.0"
   }

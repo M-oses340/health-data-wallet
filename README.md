@@ -56,11 +56,36 @@ Ethereum Smart Contracts (Hardhat / local testnet)
 | Encryption | AES-256-GCM (data), ECIES (key wrapping) |
 | Smart Contracts | Solidity ^0.8.24, Hardhat, Ethers.js |
 | Anonymization | Python 3, Microsoft Presidio, spaCy |
+| Federated Learning | Flower (flwr), scikit-learn, NumPy |
 | Testing | Jest + fast-check (PBT), Pytest + Hypothesis, Hardhat tests |
+| Containerisation | Docker, Docker Compose |
 
 ---
 
-## Prerequisites
+## Quick Start (Docker)
+
+The fastest way to run the full stack locally:
+
+```bash
+# Copy env template and fill in secrets (optional for local dev)
+cp packages/api/.env.example packages/api/.env
+
+# Build and start all services
+docker compose up --build
+```
+
+Services:
+- API → http://localhost:3000
+- FL server + anonymizer → http://localhost:5001
+- Hardhat node → http://localhost:8545
+
+Stop everything: `docker compose down`
+
+---
+
+## Manual Setup
+
+### Prerequisites
 
 - Node.js >= 18
 - npm >= 9

@@ -17,8 +17,6 @@
 import * as crypto from 'crypto';
 import * as secp from '@noble/secp256k1';
 import { ethers } from 'ethers';
-import { createHelia } from 'helia';
-import { unixfs } from '@helia/unixfs';
 import { CID } from 'multiformats/cid';
 import { ContentReference, DataType } from '@health-data/sdk';
 import type { Helia } from '@helia/interface';
@@ -65,6 +63,8 @@ export class DataVaultService {
 
   private async _node(): Promise<{ helia: Helia; fs: UnixFS }> {
     if (!this._helia) {
+      const { createHelia } = await import('helia');
+      const { unixfs } = await import('@helia/unixfs');
       this._helia = await createHelia();
       this._fs = unixfs(this._helia);
     }

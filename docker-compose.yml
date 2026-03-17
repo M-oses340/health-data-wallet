@@ -1,0 +1,51 @@
+services:
+  # ── Local Hardhat blockchain node ─────────────────────────────────────────
+  hardhat:
+    build:
+      context: .
+      dockerfile: packages/contracts/Dockerfile
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # ── Python FL server + anonymizer sidecar ────────────────────────────────
+  fl-server:
+    build:
+      context: .
+      dockerfile: packages/fl-server/Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # ── Node.js API server ────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-prod}
+      - FL_SERVER_URL=http://fl-server:5001
+      - BLOCKCHAIN_RPC_URL=http://hardhat:8545
+    depends_on:
+      fl-server:
+        condition: service_healthy
+      hardhat:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

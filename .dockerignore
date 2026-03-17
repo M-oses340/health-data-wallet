@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/.dart_tool
+**/.flutter-plugins*
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.hypothesis
+**/android
+**/ios
+**/build
+**/*.log
+.git
+.github
+packages/app

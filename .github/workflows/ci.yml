@@ -104,7 +104,17 @@ jobs:
         run: flutter test
         working-directory: packages/app
 
-  # ─── Job 5: Flower FL server (Pytest — 14 tests) ────────────────────────────
+  # ─── Job 5: Docker Compose build check ─────────────────────────────────────
+  docker:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all images
+        run: docker compose build
+
+  # ─── Job 6: Flower FL server (Pytest — 14 tests) ────────────────────────────
   fl_server:
     name: FL Server Tests
     runs-on: ubuntu-latest
