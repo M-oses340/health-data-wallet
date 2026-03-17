@@ -67,19 +67,34 @@ Ethereum Smart Contracts (Hardhat / local testnet)
 The fastest way to run the full stack locally:
 
 ```bash
-# Copy env template and fill in secrets (optional for local dev)
+# Copy env template (optional for local dev — defaults work out of the box)
 cp packages/api/.env.example packages/api/.env
 
 # Build and start all services
 docker compose up --build
 ```
 
-Services:
-- API → http://localhost:3000
-- FL server + anonymizer → http://localhost:5001
-- Hardhat node → http://localhost:8545
+Services start in dependency order — hardhat and fl-server must pass their healthchecks before the API comes up.
 
-Stop everything: `docker compose down`
+| Service | URL | Notes |
+|---|---|---|
+| API | http://localhost:3000 | Express REST API |
+| FL server + anonymizer | http://localhost:5001 | Flask + Flower + Presidio |
+| Hardhat node | http://localhost:8545 | Local Ethereum testnet |
+
+```bash
+# Verify everything is healthy
+curl http://localhost:3000/health      # {"status":"ok"}
+curl http://localhost:5001/health      # {"status":"ok"}
+curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+
+# Stop everything
+docker compose down
+```
+
+> Note: the first build takes ~20 minutes — the FL server downloads the spaCy `en_core_web_lg` model (588 MB). Subsequent builds use Docker layer cache and complete in under 2 minutes.
 
 ---
 
@@ -351,14 +366,31 @@ python -m pytest tests/ -v
 
 ---
 
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/health` | — | Liveness probe |
+| POST | `/auth/register` | — | Register new patient — returns DID + JWT |
+| POST | `/auth/login` | — | Login with DID — returns JWT |
+| GET | `/patient/:did/payments` | Bearer | Payment history |
+| GET | `/patient/:did/audit-trail` | Bearer | Full audit log |
+| POST | `/vault/upload` | Bearer | Encrypt + anonymize + pin to IPFS |
+| GET | `/marketplace/datasets` | — | Search dataset listings |
+| POST | `/marketplace/requests` | Bearer | Submit computation request |
+| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+
+---
+
 ## Environment Variables
 
 Create `packages/api/.env`:
 
 ```env
 PORT=3000
-IPFS_BLOCKSTORE_PATH=./data/blocks
-IPFS_DATASTORE_PATH=./data/datastore
+JWT_SECRET=dev-secret-change-in-prod
+FL_SERVER_URL=http://localhost:5001
+BLOCKCHAIN_RPC_URL=http://localhost:8545
 ```
 
 Create `packages/contracts/.env`:
