@@ -28,7 +28,8 @@ Flutter App
 Express API  ──────────────────────────────────────────────────────────────┐
     │                                                                       │
     ├── PatientProfileRepository   (SQLite — patient identity + consent)   │
-    ├── DataVaultService           (AES-256-GCM + ECIES content store)     │
+    ├── ResearcherProfileRepository(SQLite — researcher identity)          │
+    ├── DataVaultService           (AES-256-GCM + ECIES + SQLite store)    │
     ├── ComputationEngine          (FL / ZKP dispatch + vault data feed)   │
     ├── MarketplaceService         (SQLite — dataset discovery)            │
     ├── WalletService              (ETH balance + dividend tracking)       │
@@ -99,7 +100,7 @@ docker compose down
 
 ### Persistent storage
 
-The SQLite database is stored in the `api_data` Docker volume at `/app/data/platform.db`. Data survives container restarts. To wipe it:
+The SQLite database is stored in the `api_data` Docker volume at `/app/data/platform.db`. All vault records, patient profiles, researcher profiles, and audit entries survive container restarts. To wipe it:
 
 ```bash
 docker compose down -v
@@ -184,53 +185,132 @@ DB_PATH=./data/platform.db
 
 ```env
 PRIVATE_KEY=<deployer-private-key>
-RPC_URL=http://127.0.0.1:8545
+HARDHAT_RPC_URL=http://127.0.0.1:8545
 ```
 
 ---
 
 ## API Endpoints
 
+### Auth
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/auth/register` | — | Register new patient — returns DID + JWT |
+| POST | `/auth/register/researcher` | — | Register researcher — returns DID + JWT |
+| POST | `/auth/login` | — | Login with DID + role — returns JWT |
+
+### Patient
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/patient/profile?did=` | Bearer | Profile + data reference count |
+| GET | `/patient/payments?did=` | Bearer | Dividend payment history |
+| GET | `/patient/audit-trail?did=` | Bearer | Full immutable audit log |
+
+### Vault
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/vault/upload` | Bearer | Encrypt + anonymize + persist health record |
+| GET | `/vault/records?did=` | Bearer | List all vault records for a patient |
+
+### Marketplace
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/marketplace/datasets` | — | Search dataset listings (`?category=&dataType=`) |
+| POST | `/marketplace/requests` | Bearer (researcher) | Validate + accept computation request — returns `contractId` |
+
+### Computation
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/computation/run` | Bearer (researcher) | Trigger FL or ZKP computation for an accepted contract (requires active on-chain consent) |
+
+### Consent
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+
+### Other
+
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/health` | — | Liveness probe |
-| POST | `/auth/register` | — | Register new patient — returns DID + JWT |
-| POST | `/auth/login` | — | Login with DID — returns JWT |
-| GET | `/patient/:did/payments` | Bearer | Payment history |
-| GET | `/patient/:did/audit-trail` | Bearer | Full audit log |
-| POST | `/vault/upload` | Bearer | Encrypt + anonymize + list data |
-| GET | `/marketplace/datasets` | — | Search dataset listings (`?category=&dataType=`) |
-| POST | `/marketplace/requests` | Bearer | Submit computation request (triggers FL or ZKP) |
-| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+
+> Note: DID values contain colons (`did:ethr:0x...`) — all DID-based endpoints use query parameters rather than path parameters to avoid routing conflicts.
+
+---
 
 ### Example: full patient flow
 
 ```bash
 # Register
 PATIENT=$(curl -s -X POST http://localhost:3000/auth/register)
-DID=$(echo $PATIENT | grep -o '"did":"[^"]*"' | cut -d'"' -f4)
-TOKEN=$(echo $PATIENT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+DID=$(echo $PATIENT | python3 -c "import sys,json; print(json.load(sys.stdin)['did'])")
+TOKEN=$(echo $PATIENT | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # Upload health data
-DATA=$(echo -n '{"heartRate":72,"bp":"120/80"}' | base64)
+DATA=$(echo -n '{"heartRate":72,"spo2":98,"temperature":36.6}' | base64 -w0)
 curl -s -X POST http://localhost:3000/vault/upload \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d "{\"patientDID\":\"$DID\",\"data\":\"$DATA\",\"dataType\":\"HEALTH_METRICS\",\"category\":\"vitals\"}"
+  -d "{\"patientDID\":\"$DID\",\"data\":\"$DATA\",\"dataType\":\"HEART_RATE\",\"category\":\"vitals\"}"
 
-# Browse marketplace
-curl -s http://localhost:3000/marketplace/datasets
+# List vault records
+DID_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote('$DID'))")
+curl -s "http://localhost:3000/vault/records?did=$DID_ENC" \
+  -H "Authorization: Bearer $TOKEN"
 
-# Submit FL computation
-curl -s -X POST http://localhost:3000/marketplace/requests \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"contractId":"contract-001"}'
+# Patient profile
+curl -s "http://localhost:3000/patient/profile?did=$DID_ENC" \
+  -H "Authorization: Bearer $TOKEN"
 
 # Audit trail
-curl -s http://localhost:3000/patient/$DID/audit-trail \
+curl -s "http://localhost:3000/patient/audit-trail?did=$DID_ENC" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+### Example: researcher flow
+
+```bash
+# Register researcher
+RESEARCHER=$(curl -s -X POST http://localhost:3000/auth/register/researcher \
+  -H "Content-Type: application/json" \
+  -d '{"organisation":"Acme Research"}')
+R_DID=$(echo $RESEARCHER | python3 -c "import sys,json; print(json.load(sys.stdin)['did'])")
+R_TOKEN=$(echo $RESEARCHER | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+# Browse marketplace
+curl -s "http://localhost:3000/marketplace/datasets?category=vitals"
+
+# Submit computation request (returns contractId — no computation yet)
+curl -s -X POST http://localhost:3000/marketplace/requests \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $R_TOKEN" \
+  -d "{
+    \"researcherDID\": \"$R_DID\",
+    \"computationMethod\": \"FEDERATED_LEARNING\",
+    \"dataCategory\": \"vitals\",
+    \"permittedScope\": \"aggregate_only\",
+    \"accessDurationSeconds\": 3600,
+    \"dataDividendWei\": \"1000000000000000000\"
+  }"
+
+# Trigger computation once patients have granted on-chain consent
+curl -s -X POST http://localhost:3000/computation/run \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $R_TOKEN" \
+  -d '{"contractId":"0x..."}'
+```
+
+---
+
+## Researcher Auth
+
+Researchers register via `POST /auth/register/researcher` and receive a JWT with `role: researcher`. The `POST /marketplace/requests` and `POST /computation/run` endpoints require this role — patient tokens are rejected with 403.
 
 ---
 
@@ -258,6 +338,17 @@ Flower simulation
 When `patientData` is provided (extracted from the vault by `IVaultDataProvider`), each client trains on real anonymized records. If a silo has fewer than 4 records, it falls back to synthetic data automatically.
 
 If the FL server is unreachable, `ComputationEngine` falls back to simulated gradients so the consent-check and payment pipeline still works in dev/test.
+
+### Computation lifecycle
+
+```
+POST /marketplace/requests  →  ACCEPTED + contractId
+                                    │
+                          (patients grant on-chain consent)
+                                    │
+                                    ▼
+POST /computation/run  →  consent check → FL/ZKP → dividend payment → job result
+```
 
 ---
 
@@ -303,26 +394,28 @@ All platform state is stored in a single SQLite database (`better-sqlite3`, WAL 
 | Table | Contents |
 |---|---|
 | `patient_profiles` | DID, wallet address, public key, data references |
+| `researcher_profiles` | DID, wallet address, public key, organisation |
+| `vault_records` | CID, patient DID, encrypted blobs (iv, authTag, encryptedKey, ciphertext), plaintext for FL |
 | `marketplace_listings` | Category, data type, quality score, available methods |
 | `audit_trail` | Immutable event log — consent, uploads, computations, payments |
 
-The database path is controlled by `DB_PATH` (default: `./data/platform.db`).
+The database path is controlled by `DB_PATH` (default: `./data/platform.db`). Vault records persist across container restarts via the `api_data` Docker volume.
 
 ---
 
 ## Running Tests
 
 ```bash
-# API (Jest — 142 tests)
+# API (Jest)
 npm test --workspace=packages/api
 
-# Smart contracts (Hardhat — 18 tests)
+# Smart contracts (Hardhat)
 npx hardhat test --project packages/contracts
 
-# Anonymizer (Pytest + Hypothesis — 23 tests)
+# Anonymizer (Pytest + Hypothesis)
 cd packages/anonymizer && python -m pytest tests/ -v
 
-# FL server (Pytest — 14 tests)
+# FL server (Pytest)
 cd packages/fl-server && python -m pytest tests/ -v
 ```
 
@@ -335,8 +428,9 @@ cd packages/fl-server && python -m pytest tests/ -v
 ```
 BiometricAuthPage → RoleSelectPage
     ├── Patient → PatientShell
-    │               ├── Payments tab  (earnings + history)
-    │               └── Audit Trail   (timeline of all data events)
+    │               ├── Payments tab    (earnings + history)
+    │               ├── Audit Trail tab (timeline of all data events)
+    │               └── Upload tab      (submit heart rate / SpO₂ / temperature)
     └── Researcher → ResearcherShell
                         ├── Datasets tab   (search + filter marketplace)
                         └── New Request    (submit computation contract)
@@ -356,12 +450,12 @@ GitHub Actions runs 6 parallel jobs on every push to `main`:
 
 | Job | What it tests |
 |---|---|
-| API Tests | Jest — 142 TypeScript tests |
-| Contract Tests | Hardhat — 18 Solidity tests |
-| Anonymizer Tests | Pytest + Hypothesis — 23 Python tests |
+| API Tests | Jest — TypeScript unit + integration tests |
+| Contract Tests | Hardhat — Solidity tests |
+| Anonymizer Tests | Pytest + Hypothesis — Python tests |
 | Flutter Tests | `flutter analyze` + `flutter test` |
 | Docker Smoke Test | Full `docker compose up` + register → upload → FL → hardhat |
-| FL Server Tests | Pytest — 14 FL server tests |
+| FL Server Tests | Pytest — FL server tests |
 
 ---
 
