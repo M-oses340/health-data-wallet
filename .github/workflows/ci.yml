@@ -104,15 +104,48 @@ jobs:
         run: flutter test
         working-directory: packages/app
 
-  # ─── Job 5: Docker Compose build check ─────────────────────────────────────
+  # ─── Job 5: Docker Compose build + smoke test ──────────────────────────────
   docker:
-    name: Docker Build Check
+    name: Docker Build & Smoke Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Build all images
         run: docker compose build
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && echo "API healthy" && exit 0
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+          echo "API never became healthy" && exit 1
+
+      - name: Smoke test — register + upload + marketplace
+        run: |
+          PATIENT=$(curl -sf -X POST http://localhost:3000/auth/register)
+          DID=$(echo $PATIENT | grep -o '"did":"[^"]*"' | cut -d'"' -f4)
+          TOKEN=$(echo $PATIENT | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          DATA=$(echo -n '{"heartRate":72}' | base64)
+          curl -sf -X POST http://localhost:3000/vault/upload \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d "{\"patientDID\":\"$DID\",\"data\":\"$DATA\",\"dataType\":\"HEALTH_METRICS\",\"category\":\"vitals\"}"
+          curl -sf "http://localhost:3000/marketplace/datasets" | grep -q "listingId"
+          curl -sf http://localhost:5001/health | grep -q "ok"
+          curl -sf -X POST http://localhost:8545 \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | grep -q "result"
+          echo "All smoke tests passed"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
 
   # ─── Job 6: Flower FL server (Pytest — 14 tests) ────────────────────────────
   fl_server:

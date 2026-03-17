@@ -77,4 +77,38 @@ class ApiClient {
     final res = await _dio.post('/marketplace/requests', data: payload);
     return res.data as Map<String, dynamic>;
   }
+
+  // -------------------------------------------------------------------------
+  // Vault endpoints
+  // -------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> uploadHealthData({
+    required String patientDID,
+    required String dataBase64,
+    required String dataType,
+    required String category,
+  }) async {
+    final res = await _dio.post('/vault/upload', data: {
+      'patientDID': patientDID,
+      'data': dataBase64,
+      'dataType': dataType,
+      'category': category,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  // -------------------------------------------------------------------------
+  // Consent endpoints
+  // -------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> revokeConsent({
+    required String contractId,
+    required String patientDID,
+  }) async {
+    final res = await _dio.post('/consent/revoke', data: {
+      'contractId': contractId,
+      'patientDID': patientDID,
+    });
+    return res.data as Map<String, dynamic>;
+  }
 }

@@ -14,6 +14,7 @@
     "@helia/unixfs": "^7.0.4",
     "@noble/secp256k1": "^2.3.0",
     "@types/express": "^5.0.6",
+    "better-sqlite3": "^12.8.0",
     "blockstore-fs": "^3.0.2",
     "datastore-fs": "^11.0.2",
     "ethers": "^6.13.0",
@@ -21,6 +22,7 @@
     "helia": "^6.0.21"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
     "@types/supertest": "^7.2.0",

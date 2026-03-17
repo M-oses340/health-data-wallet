@@ -74,12 +74,19 @@ def run_federated_learning(
     num_clients: int = 3,
     num_rounds: int = 3,
     n_features: int = 10,
+    patient_data: Optional[List[List[Dict]]] = None,
 ) -> Dict:
     """
     Run a full federated learning simulation for a given contract.
 
     Each client represents a patient data silo. Flower's virtual client
     engine runs all clients in-process — no network required.
+
+    Args:
+        patient_data: Optional list of per-client record lists. Each element
+                      is a list of dicts with numeric health fields from the
+                      vault. When provided, clients train on real data instead
+                      of synthetic seeds.
 
     Returns a dict with:
       - contract_id
@@ -105,10 +112,13 @@ def run_federated_learning(
 
     def client_fn(cid: str) -> fl.client.Client:
         seed = seed_base + int(cid)
+        idx = int(cid)
+        records = patient_data[idx] if (patient_data and idx < len(patient_data)) else None
         return HealthDataClient(
             patient_id=f"patient-{cid}",
             n_features=n_features,
             seed=seed % (2**31),
+            real_records=records,
         ).to_client()
 
     # Run simulation
@@ -131,12 +141,20 @@ def run_federated_learning(
         f"{contract_id}:{num_rounds}".encode()
     ).hexdigest()[:12]
 
+    # Sample count: use real data size if available, else estimate
+    if patient_data:
+        sample_count = sum(len(records) for records in patient_data if records)
+        if sample_count == 0:
+            sample_count = num_clients * 160
+    else:
+        sample_count = num_clients * 160  # 200 samples × 0.8 train split
+
     return {
         "contract_id": contract_id,
         "num_rounds": num_rounds,
         "num_clients": num_clients,
         "round_metrics": strategy.round_metrics,
         "layer_gradients": layer_gradients,
-        "sample_count": num_clients * 160,  # 200 samples × 0.8 train split
+        "sample_count": sample_count,
         "round_id": round_id,
     }

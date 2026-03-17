@@ -1,14 +1,10 @@
 /**
- * AuditTrailService — immutable on-chain audit trail for all platform events.
- *
+ * AuditTrailService — SQLite-backed immutable audit trail.
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
  */
 import { createHash, randomBytes } from 'crypto';
 import { AuditTrailEntry, AuditEventType, ComputationMethod } from '@health-data/sdk';
-
-// ---------------------------------------------------------------------------
-// Input type for writing a new entry
-// ---------------------------------------------------------------------------
+import { db } from '../db';
 
 export interface AuditEntryInput {
   patientDID: string;
@@ -17,76 +13,58 @@ export interface AuditEntryInput {
   dataRef?: string;
   computationMethod?: ComputationMethod;
   amount?: bigint;
-  /** Override timestamp (defaults to Date.now()) — useful for testing */
   timestamp?: number;
 }
 
-// ---------------------------------------------------------------------------
-// AuditTrailService
-// ---------------------------------------------------------------------------
-
 export class AuditTrailService {
-  /**
-   * Append-only log — entries are never modified or deleted after insertion.
-   * Requirement 6.3 — immutability.
-   */
-  private readonly log: AuditTrailEntry[] = [];
-
-  /**
-   * Write an immutable audit entry.
-   * Returns the written entry.
-   * Requirements: 6.1, 6.3
-   */
   writeEntry(input: AuditEntryInput): AuditTrailEntry {
     const entryId = randomBytes(16).toString('hex');
     const timestamp = input.timestamp ?? Date.now();
+    const onChainTxHash = '0x' + createHash('sha256')
+      .update(JSON.stringify({ entryId, ...input, timestamp }, (_, v) => typeof v === 'bigint' ? v.toString() : v))
+      .digest('hex');
 
-    // Simulate on-chain tx hash: SHA-256 of entry content
-    const onChainTxHash =
-      '0x' +
-      createHash('sha256')
-        .update(JSON.stringify({ entryId, ...input, timestamp }, (_, v) => (typeof v === 'bigint' ? v.toString() : v)))
-        .digest('hex');
+    db.prepare(`
+      INSERT INTO audit_trail
+        (entry_id, patient_did, event_type, contract_id, data_ref, computation_method, amount, timestamp, on_chain_tx_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      entryId, input.patientDID, input.eventType,
+      input.contractId ?? null, input.dataRef ?? null,
+      input.computationMethod ?? null,
+      input.amount != null ? input.amount.toString() : null,
+      timestamp, onChainTxHash,
+    );
 
-    const entry: AuditTrailEntry = {
-      entryId,
-      patientDID: input.patientDID,
-      eventType: input.eventType,
-      contractId: input.contractId,
-      dataRef: input.dataRef,
-      computationMethod: input.computationMethod,
-      amount: input.amount,
-      timestamp,
-      onChainTxHash,
-    };
-
-    // Freeze the entry so it cannot be mutated after insertion (Req 6.3)
-    Object.freeze(entry);
-    this.log.push(entry);
-
-    return entry;
+    return Object.freeze({
+      entryId, patientDID: input.patientDID, eventType: input.eventType,
+      contractId: input.contractId, dataRef: input.dataRef,
+      computationMethod: input.computationMethod, amount: input.amount,
+      timestamp, onChainTxHash,
+    });
   }
 
-  /**
-   * Return all audit entries for a patient in ascending timestamp order.
-   * Requirements: 6.1, 6.2
-   */
   getAuditTrail(patientDID: string): AuditTrailEntry[] {
-    return this.log
-      .filter(e => e.patientDID === patientDID)
-      .sort((a, b) => a.timestamp - b.timestamp);
+    const rows = db.prepare(
+      'SELECT * FROM audit_trail WHERE patient_did = ? ORDER BY timestamp ASC'
+    ).all(patientDID) as any[];
+    return rows.map(r => ({
+      entryId: r.entry_id,
+      patientDID: r.patient_did,
+      eventType: r.event_type as AuditEventType,
+      contractId: r.contract_id ?? undefined,
+      dataRef: r.data_ref ?? undefined,
+      computationMethod: r.computation_method as ComputationMethod ?? undefined,
+      amount: r.amount != null ? BigInt(r.amount) : undefined,
+      timestamp: r.timestamp,
+      onChainTxHash: r.on_chain_tx_hash,
+    }));
   }
 
-  /**
-   * Export the patient's audit trail as a JSON string.
-   * Requirement 6.5
-   */
   exportAuditTrail(patientDID: string): string {
-    const entries = this.getAuditTrail(patientDID);
-    // bigint is not JSON-serialisable by default — convert to string
     return JSON.stringify(
-      entries,
-      (_, v) => (typeof v === 'bigint' ? v.toString() : v),
+      this.getAuditTrail(patientDID),
+      (_, v) => typeof v === 'bigint' ? v.toString() : v,
       2,
     );
   }

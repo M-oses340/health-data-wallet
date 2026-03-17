@@ -34,19 +34,44 @@ services:
       dockerfile: packages/api/Dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - api_data:/app/data
+      - ./packages/contracts/deployed-addresses.json:/app/deployed-addresses.json:ro
     environment:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-prod}
       - FL_SERVER_URL=http://fl-server:5001
       - BLOCKCHAIN_RPC_URL=http://hardhat:8545
+      - DB_PATH=/app/data/platform.db
     depends_on:
       fl-server:
         condition: service_healthy
       hardhat:
         condition: service_healthy
+      contracts-deploy:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
       interval: 5s
       timeout: 3s
       retries: 20
       start_period: 30s
+
+  # ── Deploy contracts to Hardhat ───────────────────────────────────────────
+  contracts-deploy:
+    build:
+      context: .
+      dockerfile: packages/contracts/Dockerfile
+    command: sh -c "npx hardhat run scripts/deploy.ts --network localhost && cp deployed-addresses.json /addresses/deployed-addresses.json"
+    working_dir: /app/packages/contracts
+    volumes:
+      - ./packages/contracts:/addresses
+    environment:
+      - HARDHAT_NETWORK=localhost
+    depends_on:
+      hardhat:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  api_data:

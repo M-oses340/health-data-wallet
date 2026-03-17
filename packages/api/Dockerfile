@@ -1,6 +1,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Install build tools for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Copy monorepo root configs
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/sdk ./packages/sdk
@@ -12,6 +15,9 @@ RUN npm run build --workspace=packages/api
 
 FROM node:20-alpine
 WORKDIR /app
+
+# Runtime deps for better-sqlite3
+RUN apk add --no-cache libstdc++
 
 # Copy node_modules and compiled output from builder
 COPY --from=builder /app/node_modules ./node_modules

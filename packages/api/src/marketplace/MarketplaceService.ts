@@ -1,29 +1,17 @@
 /**
- * MarketplaceService — anonymized dataset discovery and computation request submission.
- *
+ * MarketplaceService — SQLite-backed anonymized dataset discovery.
  * Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
  */
 import { randomBytes } from 'crypto';
 import { ComputationMethod, ComputationRequest, DataType } from '@health-data/sdk';
+import { db } from '../db';
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
-/**
- * A dataset listing returned by the marketplace.
- * Contains ONLY anonymized category metadata — no raw or identifiable patient data.
- * Requirement 7.1
- */
 export interface DatasetListing {
   listingId: string;
   category: string;
   dataType: DataType;
-  /** Minimum quality score across all records in this dataset */
   minQualityScore: number;
-  /** Number of anonymized records available */
   recordCount: number;
-  /** Available computation methods for this dataset */
   availableMethods: ComputationMethod[];
 }
 
@@ -36,114 +24,63 @@ export interface DatasetQuery {
 export interface RequestSubmission {
   requestId: string;
   status: 'ACCEPTED' | 'REJECTED';
-  /** Set when status is REJECTED — maps field name → error message */
   fieldErrors?: Record<string, string>;
-  /** Set when status is ACCEPTED */
   contractId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Internal listing registry (populated via registerDataset)
-// ---------------------------------------------------------------------------
-
-interface InternalListing extends DatasetListing {
-  // No raw patient data fields — only metadata
-}
-
-// ---------------------------------------------------------------------------
-// MarketplaceService
-// ---------------------------------------------------------------------------
-
 export class MarketplaceService {
-  private readonly listings = new Map<string, InternalListing>();
-
-  /**
-   * Register an anonymized dataset listing.
-   * Called by the platform after anonymization completes.
-   * Only metadata fields are accepted — raw data is rejected at the type level.
-   */
   registerDataset(listing: Omit<DatasetListing, 'listingId'>): DatasetListing {
     const listingId = randomBytes(8).toString('hex');
-    const stored: InternalListing = { listingId, ...listing };
-    this.listings.set(listingId, stored);
-    return { ...stored };
+    db.prepare(`
+      INSERT INTO marketplace_listings
+        (listing_id, category, data_type, min_quality_score, record_count, available_methods)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      listingId, listing.category, listing.dataType,
+      listing.minQualityScore, listing.recordCount,
+      JSON.stringify(listing.availableMethods),
+    );
+    return { listingId, ...listing };
   }
 
-  /**
-   * Search for anonymized dataset listings by category and/or data type.
-   * Returns only metadata — no raw or identifiable patient data.
-   * Requirements: 7.1, 7.2
-   */
   searchDatasets(query: DatasetQuery): DatasetListing[] {
-    return Array.from(this.listings.values())
-      .filter(l => {
-        if (query.category && l.category.toLowerCase() !== query.category.toLowerCase()) {
-          return false;
-        }
-        if (query.dataType && l.dataType !== query.dataType) {
-          return false;
-        }
-        if (query.minQualityScore !== undefined && l.minQualityScore < query.minQualityScore) {
-          return false;
-        }
-        return true;
-      })
-      .map(l => ({ ...l })); // return copies — no internal references
+    let sql = 'SELECT * FROM marketplace_listings WHERE 1=1';
+    const params: any[] = [];
+    if (query.category) { sql += ' AND LOWER(category) = LOWER(?)'; params.push(query.category); }
+    if (query.dataType) { sql += ' AND data_type = ?'; params.push(query.dataType); }
+    if (query.minQualityScore !== undefined) { sql += ' AND min_quality_score >= ?'; params.push(query.minQualityScore); }
+    const rows = db.prepare(sql).all(...params) as any[];
+    return rows.map(r => ({
+      listingId: r.listing_id,
+      category: r.category,
+      dataType: r.data_type as DataType,
+      minQualityScore: r.min_quality_score,
+      recordCount: r.record_count,
+      availableMethods: JSON.parse(r.available_methods),
+    }));
   }
 
-  /**
-   * Validate and submit a computation request.
-   * Rejects with field-level errors if any required fields are missing.
-   * On valid request, generates a contractId for Smart Contract creation.
-   * Requirements: 7.3, 7.4, 7.5
-   */
   submitComputationRequest(request: Partial<ComputationRequest>): RequestSubmission {
     const fieldErrors = this._validateRequest(request);
-
     if (Object.keys(fieldErrors).length > 0) {
       return { requestId: randomBytes(8).toString('hex'), status: 'REJECTED', fieldErrors };
     }
-
     const contractId = '0x' + randomBytes(32).toString('hex');
-    return {
-      requestId: randomBytes(8).toString('hex'),
-      status: 'ACCEPTED',
-      contractId,
-    };
+    return { requestId: randomBytes(8).toString('hex'), status: 'ACCEPTED', contractId };
   }
-
-  // ---------------------------------------------------------------------------
-  // Private
-  // ---------------------------------------------------------------------------
 
   private _validateRequest(req: Partial<ComputationRequest>): Record<string, string> {
     const errors: Record<string, string> = {};
-
-    if (!req.researcherDID || req.researcherDID.trim() === '') {
-      errors['researcherDID'] = 'researcherDID is required';
-    }
-    if (!req.dataCategory || req.dataCategory.trim() === '') {
-      errors['dataCategory'] = 'dataCategory is required';
-    }
-    if (!req.computationMethod) {
-      errors['computationMethod'] = 'computationMethod is required';
-    } else if (!['FEDERATED_LEARNING', 'ZKP'].includes(req.computationMethod)) {
+    if (!req.researcherDID?.trim()) errors['researcherDID'] = 'researcherDID is required';
+    if (!req.dataCategory?.trim()) errors['dataCategory'] = 'dataCategory is required';
+    if (!req.computationMethod) errors['computationMethod'] = 'computationMethod is required';
+    else if (!['FEDERATED_LEARNING', 'ZKP'].includes(req.computationMethod))
       errors['computationMethod'] = 'computationMethod must be FEDERATED_LEARNING or ZKP';
-    }
-    if (!req.permittedScope || req.permittedScope.trim() === '') {
-      errors['permittedScope'] = 'permittedScope is required';
-    }
-    if (req.accessDurationSeconds === undefined || req.accessDurationSeconds === null) {
-      errors['accessDurationSeconds'] = 'accessDurationSeconds is required';
-    } else if (req.accessDurationSeconds <= 0) {
-      errors['accessDurationSeconds'] = 'accessDurationSeconds must be greater than 0';
-    }
-    if (req.dataDividendWei === undefined || req.dataDividendWei === null) {
-      errors['dataDividendWei'] = 'dataDividendWei is required';
-    } else if (req.dataDividendWei <= 0n) {
-      errors['dataDividendWei'] = 'dataDividendWei must be greater than 0';
-    }
-
+    if (!req.permittedScope?.trim()) errors['permittedScope'] = 'permittedScope is required';
+    if (req.accessDurationSeconds == null) errors['accessDurationSeconds'] = 'accessDurationSeconds is required';
+    else if (req.accessDurationSeconds <= 0) errors['accessDurationSeconds'] = 'must be > 0';
+    if (req.dataDividendWei == null) errors['dataDividendWei'] = 'dataDividendWei is required';
+    else if (req.dataDividendWei <= 0n) errors['dataDividendWei'] = 'must be > 0';
     return errors;
   }
 }

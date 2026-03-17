@@ -53,14 +53,19 @@ def fl_run():
     num_clients = max(1, min(num_clients, 10))
     num_rounds = max(1, min(num_rounds, 10))
 
-    logger.info("Starting FL job — contract=%s clients=%d rounds=%d",
-                contract_id, num_clients, num_rounds)
+    # Optional real patient data: list of per-client record lists
+    # Each element is a list of dicts with numeric health fields
+    patient_data = body.get("patientData")  # None → synthetic fallback
+
+    logger.info("Starting FL job — contract=%s clients=%d rounds=%d real_data=%s",
+                contract_id, num_clients, num_rounds, patient_data is not None)
 
     try:
         result = run_federated_learning(
             contract_id=contract_id,
             num_clients=num_clients,
             num_rounds=num_rounds,
+            patient_data=patient_data,
         )
         job_id = str(uuid.uuid4())
         return jsonify({

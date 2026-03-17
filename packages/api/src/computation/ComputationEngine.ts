@@ -32,8 +32,6 @@ export interface ComputationJob {
 
 /**
  * Minimal interface the engine needs from the on-chain consent layer.
- * In production this would be an ethers.js contract wrapper; here it is
- * an interface so tests can inject a simple in-memory stub.
  */
 export interface IConsentRegistry {
   isConsentActive(contractId: string): Promise<boolean>;
@@ -47,6 +45,15 @@ export interface IPaymentRouter {
   releaseDividend(contractId: string): Promise<string>; // returns tx hash
 }
 
+/**
+ * Optional provider that returns anonymized vault records for FL training.
+ * Returns an array of per-client record lists (one list per simulated silo).
+ * Each record is a plain object with numeric health fields.
+ */
+export interface IVaultDataProvider {
+  getAnonymizedRecordsForFL(contractId: string): Promise<Record<string, number>[][]>;
+}
+
 // ---------------------------------------------------------------------------
 // ComputationEngine
 // ---------------------------------------------------------------------------
@@ -57,6 +64,7 @@ export class ComputationEngine {
   constructor(
     private readonly registry: IConsentRegistry,
     private readonly paymentRouter: IPaymentRouter,
+    private readonly vaultDataProvider?: IVaultDataProvider,
   ) {}
 
   /**
@@ -128,18 +136,33 @@ export class ComputationEngine {
   ): Promise<ComputationResult> {
     const flServerUrl = process.env.FL_SERVER_URL ?? 'http://localhost:5001';
 
+    // Fetch anonymized vault records to pass as real training data
+    let patientData: Record<string, number>[][] | undefined;
+    if (this.vaultDataProvider) {
+      try {
+        patientData = await this.vaultDataProvider.getAnonymizedRecordsForFL(contractId);
+      } catch {
+        // Non-fatal — FL server will fall back to synthetic data
+      }
+    }
+
     let gradients: ModelGradients;
 
     try {
+      const body: Record<string, unknown> = {
+        contractId,
+        numClients: 3,
+        numRounds: 3,
+      };
+      if (patientData && patientData.length > 0) {
+        body['patientData'] = patientData;
+      }
+
       // Call the Flower FL server HTTP bridge
       const response = await fetch(`${flServerUrl}/fl/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contractId,
-          numClients: 3,
-          numRounds: 3,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
