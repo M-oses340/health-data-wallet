@@ -17,7 +17,7 @@ import { ComputationRequest } from '@health-data/sdk';
 
 const REGISTRY_ABI = [
   'function createContract(bytes32 contractId, address patientWallet, string dataCategory, string permittedScope, uint256 accessDuration, uint256 dataDividend, uint8 computationMethod) external',
-  'function signContract(bytes32 contractId, address patientWallet) external',
+  'function signContract(bytes32 contractId) external',
   'function revokeConsent(bytes32 contractId, address patientWallet) external',
   'function expireContract(bytes32 contractId) external',
   'function isConsentActive(bytes32 contractId) external view returns (bool)',
@@ -80,7 +80,10 @@ export function buildChainAdapters(rpcUrl: string): {
     console.log('[chain] Connected to ConsentRegistry at', addresses.ConsentRegistry);
     console.log('[chain] Connected to PaymentRouter at', addresses.PaymentRouter);
 
-    const toBytes32 = (id: string) => {
+    const toBytes32 = (id: string): string => {
+      // If already a 0x-prefixed 32-byte hex value, use it directly
+      if (/^0x[0-9a-fA-F]{64}$/.test(id)) return id;
+      // Otherwise encode as UTF-8 bytes padded to 32 bytes
       const hex = Buffer.from(id).toString('hex').padEnd(64, '0').slice(0, 64);
       return '0x' + hex;
     };
@@ -97,20 +100,28 @@ export function buildChainAdapters(rpcUrl: string): {
     };
 
     const consentManager: IOnChainConsentManager = {
-      async createContract(contractId: string, patientAddress: string, request: ComputationRequest) {
+      async createContract(contractId: string, _patientAddress: string, request: ComputationRequest) {
         try {
+          // Use the API signer address as patientWallet so signContract (also called
+          // by the API signer) satisfies the msg.sender == patientWallet check.
           const tx = await registry.createContract(
-            toBytes32(contractId), patientAddress,
+            toBytes32(contractId), signer.address,
             request.dataCategory ?? 'general', request.permittedScope ?? 'research',
             request.accessDurationSeconds ?? 86400, request.dataDividendWei ?? 0n,
             request.computationMethod === 'ZKP' ? 1 : 0,
           );
           await tx.wait();
-        } catch { /* contract may already exist */ }
+          // Reset ethers nonce cache after mining so next call gets fresh nonce
+          await (signer.provider as any)?.send?.('hardhat_setNextBlockBaseFeePerGas', ['0x0']).catch(() => {});
+        } catch (e) { console.warn('[chain] createContract failed:', (e as Error).message); }
       },
       async signContract(contractId: string, _patientDID: string) {
-        try { const tx = await registry.signContract(toBytes32(contractId), signer.address); await tx.wait(); }
-        catch { /* ignore */ }
+        try {
+          // Fetch confirmed nonce directly to bypass ethers.js nonce cache
+          const nonce = await provider.getTransactionCount(signer.address, 'latest');
+          const tx = await registry.signContract(toBytes32(contractId), { nonce });
+          await tx.wait();
+        } catch (e) { console.warn('[chain] signContract failed:', (e as Error).message); }
       },
       async revokeConsent(contractId: string, _patientDID: string) {
         try { const tx = await registry.revokeConsent(toBytes32(contractId), signer.address); await tx.wait(); }

@@ -291,6 +291,50 @@ app.post('/computation/run', requireAuth, requireRole('researcher'), async (req,
 
 // ── Consent ───────────────────────────────────────────────────────────────
 
+// Patient grants consent for a researcher's accepted contract.
+// Creates + signs the on-chain consent record, making the contract ACTIVE
+// so the researcher can subsequently call POST /computation/run.
+app.post('/consent/grant', requireAuth, async (req, res) => {
+  const {
+    patientDID,
+    contractId,
+    researcherDID,
+    dataCategory,
+    computationMethod,
+    permittedScope,
+    accessDurationSeconds,
+    dataDividendWei,
+  } = req.body as {
+    patientDID?: string;
+    contractId?: string;
+    researcherDID?: string;
+    dataCategory?: string;
+    computationMethod?: ComputationMethod;
+    permittedScope?: string;
+    accessDurationSeconds?: number;
+    dataDividendWei?: string;
+  };
+
+  if (!patientDID || !contractId || !researcherDID || !dataCategory || !computationMethod || !permittedScope || accessDurationSeconds == null || dataDividendWei == null) {
+    res.status(400).json({ error: 'patientDID, contractId, researcherDID, dataCategory, computationMethod, permittedScope, accessDurationSeconds, dataDividendWei required' });
+    return;
+  }
+
+  try {
+    await orchestrator.submitAndSignContract(patientDID, contractId, {
+      researcherDID,
+      dataCategory,
+      computationMethod,
+      permittedScope,
+      accessDurationSeconds,
+      dataDividendWei: BigInt(dataDividendWei),
+    });
+    res.json({ status: 'ACTIVE', contractId, patientDID });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 app.post('/consent/revoke', requireAuth, async (req, res) => {
   const { contractId, patientDID } = req.body as { contractId: string; patientDID: string };
   if (!contractId || !patientDID) {
