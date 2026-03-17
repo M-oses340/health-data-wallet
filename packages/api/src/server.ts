@@ -1,18 +1,3 @@
-/**
- * HTTP server — Express app wiring all platform services into REST endpoints.
- *
- * Routes:
- *   POST /auth/register              → register new patient (returns DID + JWT)
- *   POST /auth/register/researcher   → register new researcher (returns DID + JWT)
- *   POST /auth/login                 → login with DID + role (returns JWT)
- *   GET  /patient/:did/payments      → payment history
- *   GET  /patient/:did/audit-trail   → audit log
- *   GET  /marketplace/datasets       → search listings
- *   POST /marketplace/requests       → submit computation request (researcher only)
- *   POST /vault/upload               → upload + anonymize + list data
- *   POST /consent/revoke             → revoke consent
- *   GET  /health                     → liveness probe
- */
 import express, { Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto';
 import { WalletService } from './wallet/WalletService';
@@ -22,7 +7,6 @@ import { DataVaultService } from './vault/DataVaultService';
 import { MarketplaceService } from './marketplace/MarketplaceService';
 import { ComputationEngine, IVaultDataProvider } from './computation/ComputationEngine';
 import { AuditTrailService } from './audit/AuditTrailService';
-import { ComplianceService } from './compliance/ComplianceService';
 import { PlatformOrchestrator } from './orchestrator/PlatformOrchestrator';
 import { buildChainAdapters } from './chain/ContractAdapters';
 import { DataType, ComputationMethod } from '@health-data/sdk';
@@ -38,12 +22,10 @@ const vaultService = new DataVaultService();
 const marketplace = new MarketplaceService();
 const auditTrail = new AuditTrailService();
 
-// Chain adapters — real ethers.js if contracts deployed, stubs otherwise
 const RPC_URL = process.env.BLOCKCHAIN_RPC_URL ?? 'http://localhost:8545';
 const { consentRegistry, consentManager, paymentRouter, onChainPaymentRouter } = buildChainAdapters(RPC_URL);
 
-// Vault data provider — distributes real decoded health records across FL silos.
-// Each patient whose data is in the vault becomes one silo.
+// Vault data provider: each patient with vault records becomes one FL silo
 const vaultDataProvider: IVaultDataProvider = {
   async getAnonymizedRecordsForFL(_contractId: string) {
     const { db } = await import('./db');
@@ -67,7 +49,6 @@ const vaultDataProvider: IVaultDataProvider = {
 
 const computationEngine = new ComputationEngine(consentRegistry, paymentRouter, vaultDataProvider);
 
-// Anonymizer adapter — calls the Python FL server sidecar
 const FL_URL = process.env.FL_SERVER_URL ?? 'http://localhost:5001';
 const anonymizerAdapter = {
   async deidentify(data: Buffer, patientDID: string, dataType: DataType, threshold: number) {
@@ -190,16 +171,40 @@ app.post('/auth/login', (req, res) => {
 
 // ── Patient ───────────────────────────────────────────────────────────────
 
-app.get('/patient/:did/payments', requireAuth, (req, res) => {
-  const did = req.params['did'] as string;
+app.get('/patient/payments', requireAuth, (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
   res.json({ payments: auditTrail.getAuditTrail(did).filter(e => e.eventType === 'DIVIDEND_PAID') });
 });
 
-app.get('/patient/:did/audit-trail', requireAuth, (req, res) => {
-  res.json({ entries: auditTrail.getAuditTrail(req.params['did'] as string) });
+app.get('/patient/audit-trail', requireAuth, (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
+  res.json({ entries: auditTrail.getAuditTrail(did) });
+});
+
+app.get('/patient/profile', requireAuth, (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
+  const profile = profileRepo.findByDID(did);
+  if (!profile) { res.status(404).json({ error: 'Patient not found' }); return; }
+  res.json({
+    did: profile.did,
+    walletAddress: profile.walletAddress,
+    registeredAt: profile.registeredAt,
+    dataReferenceCount: profile.dataReferences.length,
+    minimumQualityThreshold: profile.minimumQualityThreshold,
+  });
 });
 
 // ── Vault ─────────────────────────────────────────────────────────────────
+
+app.get('/vault/records', requireAuth, (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
+  const records = vaultService.listByPatient(did);
+  res.json({ records });
+});
 
 app.post('/vault/upload', requireAuth, async (req, res) => {
   const { patientDID, data, dataType, category } = req.body as {
@@ -223,11 +228,18 @@ app.get('/marketplace/datasets', (req, res) => {
   res.json(marketplace.searchDatasets({ category, dataType: dataType as DataType }));
 });
 
-// Researcher-only: validate request body, generate contractId, run computation
-app.post('/marketplace/requests', requireAuth, requireRole('researcher'), async (req, res) => {
+// Researcher-only: validate and accept a computation request.
+// Returns contractId for the researcher to use when triggering computation
+// after patients have granted on-chain consent.
+app.post('/marketplace/requests', requireAuth, requireRole('researcher'), (req, res) => {
   const {
-    listingId, researcherDID, computationMethod, dataCategory,
-    permittedScope, accessDurationSeconds, dataDividendWei,
+    listingId,
+    researcherDID,
+    computationMethod,
+    dataCategory,
+    permittedScope,
+    accessDurationSeconds,
+    dataDividendWei,
   } = req.body as {
     listingId?: string;
     researcherDID?: string;
@@ -238,7 +250,6 @@ app.post('/marketplace/requests', requireAuth, requireRole('researcher'), async 
     dataDividendWei?: string;
   };
 
-  // Validate via MarketplaceService
   const submission = marketplace.submitComputationRequest({
     researcherDID,
     dataCategory,
@@ -252,7 +263,6 @@ app.post('/marketplace/requests', requireAuth, requireRole('researcher'), async 
     res.status(400).json(submission); return;
   }
 
-  // Verify listing exists if provided
   if (listingId) {
     const listings = marketplace.searchDatasets({});
     if (!listings.find(l => l.listingId === listingId)) {
@@ -260,11 +270,22 @@ app.post('/marketplace/requests', requireAuth, requireRole('researcher'), async 
     }
   }
 
+  // Return the accepted submission — computation is triggered separately via
+  // POST /computation/run once patients have granted on-chain consent.
+  res.status(201).json(submission);
+});
+
+// Trigger computation for an already-accepted contract (requires active on-chain consent).
+app.post('/computation/run', requireAuth, requireRole('researcher'), async (req, res) => {
+  const { contractId } = req.body as { contractId?: string };
+  if (!contractId) { res.status(400).json({ error: 'contractId required' }); return; }
   try {
-    const job = await computationEngine.initiateComputation(submission.contractId!);
-    res.status(201).json({ ...submission, job });
+    const job = await computationEngine.initiateComputation(contractId);
+    res.status(201).json({ job });
   } catch (e: unknown) {
-    res.status(500).json({ error: (e as Error).message });
+    const msg = (e as Error).message;
+    const status = msg.startsWith('Computation rejected') ? 403 : 500;
+    res.status(status).json({ error: msg });
   }
 });
 

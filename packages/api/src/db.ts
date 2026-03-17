@@ -58,4 +58,19 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_audit_patient ON audit_trail(patient_did);
+
+  CREATE TABLE IF NOT EXISTS vault_records (
+    cid             TEXT PRIMARY KEY,
+    patient_did     TEXT NOT NULL,
+    patient_address TEXT NOT NULL,
+    data_type       TEXT NOT NULL,
+    uploaded_at     INTEGER NOT NULL,
+    iv              BLOB NOT NULL,
+    auth_tag        BLOB NOT NULL,
+    encrypted_key   BLOB NOT NULL,
+    ciphertext      BLOB NOT NULL,
+    plaintext       BLOB
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_vault_patient ON vault_records(patient_did);
 `);

@@ -68,6 +68,7 @@ services:
       - ./packages/contracts:/addresses
     environment:
       - HARDHAT_NETWORK=localhost
+      - HARDHAT_RPC_URL=http://hardhat:8545
     depends_on:
       hardhat:
         condition: service_healthy

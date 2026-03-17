@@ -1,12 +1,10 @@
 /**
- * DataVaultService — AES-256-GCM encrypted vault with content-addressed storage.
+ * DataVaultService — AES-256-GCM encrypted vault with SQLite-backed persistence.
  *
  * Storage model:
- *  - Ciphertext bytes are stored in an in-process content-addressed store;
- *    a SHA-256 based CID is computed and used as the record identifier.
- *  - Encryption metadata (iv, authTag, encryptedKey, patient info) is kept in a local
- *    sidecar Map keyed by CID string.  This metadata never leaves the node.
- *  - "Delete" removes the block from the local store and drops the sidecar.
+ *  - Ciphertext + encryption metadata are stored in the `vault_records` SQLite table.
+ *  - An in-process cache (Map) avoids redundant DB reads for hot records.
+ *  - Plaintext is stored alongside ciphertext for FL use only (never exposed via API).
  *
  * Encryption:
  *  - AES-256-GCM with a random per-record symmetric key.
@@ -18,6 +16,7 @@ import * as crypto from 'crypto';
 import * as secp from '@noble/secp256k1';
 import { ethers } from 'ethers';
 import { ContentReference, DataType } from '@health-data/sdk';
+import { db } from '../db';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -28,8 +27,15 @@ export interface SignedToken {
   signature: string; // EIP-191 personal_sign over the CID string
 }
 
+export interface VaultRecord {
+  cid: string;
+  patientDID: string;
+  dataType: DataType;
+  uploadedAt: number;
+}
+
 // ---------------------------------------------------------------------------
-// Internal sidecar metadata (never stored on IPFS)
+// Internal metadata
 // ---------------------------------------------------------------------------
 
 interface VaultMeta {
@@ -40,7 +46,8 @@ interface VaultMeta {
   patientAddress: string;
   dataType: DataType;
   uploadedAt: number;
-  ciphertext: Buffer; // stored in-process
+  ciphertext: Buffer;
+  plaintext?: Buffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,11 +55,11 @@ interface VaultMeta {
 // ---------------------------------------------------------------------------
 
 export class DataVaultService {
-  /** Sidecar: CID string → encryption metadata + ciphertext */
-  private readonly _meta = new Map<string, VaultMeta>();
+  /** Hot cache: CID → metadata (populated on first access or upload) */
+  private readonly _cache = new Map<string, VaultMeta>();
 
   // ---------------------------------------------------------------------------
-  // upload — encrypt then store content-addressed
+  // upload — encrypt, persist to SQLite, cache
   // Requirements: 1.2, 1.4, 1.6
   // ---------------------------------------------------------------------------
 
@@ -62,45 +69,45 @@ export class DataVaultService {
     patientPublicKey: string,
     dataType: DataType,
   ): Promise<ContentReference> {
-    // 1. AES-256-GCM encrypt
     const symKey = crypto.randomBytes(32);
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', symKey, iv);
     const ciphertext = Buffer.concat([cipher.update(data), cipher.final()]);
     const authTag = cipher.getAuthTag();
 
-    // 2. ECIES-encrypt the symmetric key to the patient's public key
     const encryptedKey = this._encryptKeyToPublicKey(symKey, patientPublicKey);
-
-    // 3. Derive patient EVM address for access-control
     const patientAddress = ethers.computeAddress('0x' + patientPublicKey);
-
-    // 4. Content-addressed CID — SHA-256 of ciphertext (same model as IPFS CIDv1)
     const cidStr = 'bafy' + crypto.createHash('sha256').update(ciphertext).digest('hex');
+    const uploadedAt = Date.now();
 
-    // 5. Store sidecar metadata + ciphertext locally
-    this._meta.set(cidStr, {
-      iv,
-      authTag,
-      encryptedKey,
-      patientDID,
-      patientAddress,
-      dataType,
-      uploadedAt: Date.now(),
-      ciphertext,
-      _plaintext: data,  // kept in-process for FL vault data provider
-    } as any);
+    const meta: VaultMeta = {
+      iv, authTag, encryptedKey, patientDID, patientAddress,
+      dataType, uploadedAt, ciphertext, plaintext: data,
+    };
+
+    // Persist to SQLite (upsert — idempotent on same ciphertext)
+    db.prepare(`
+      INSERT OR IGNORE INTO vault_records
+        (cid, patient_did, patient_address, data_type, uploaded_at,
+         iv, auth_tag, encrypted_key, ciphertext, plaintext)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      cidStr, patientDID, patientAddress, dataType, uploadedAt,
+      iv, authTag, encryptedKey, ciphertext, data,
+    );
+
+    this._cache.set(cidStr, meta);
 
     return {
       cid: cidStr,
       dataType,
-      uploadedAt: Date.now(),
+      uploadedAt,
       encryptionKeyRef: `vault:${cidStr}:key`,
     };
   }
 
   // ---------------------------------------------------------------------------
-  // retrieve — fetch from store then decrypt
+  // retrieve — decrypt (load from DB if not cached)
   // Requirement: 1.5
   // ---------------------------------------------------------------------------
 
@@ -117,38 +124,51 @@ export class DataVaultService {
   }
 
   // ---------------------------------------------------------------------------
-  // delete — remove from store + drop sidecar
+  // delete — remove from DB + cache
   // Requirement: 1.6
   // ---------------------------------------------------------------------------
 
   async delete(cid: string, authToken: SignedToken): Promise<void> {
     this._authorise(cid, authToken);
-    this._meta.delete(cid);
+    db.prepare('DELETE FROM vault_records WHERE cid = ?').run(cid);
+    this._cache.delete(cid);
   }
 
-  /** Check whether a CID is tracked in the sidecar (no auth required). */
   exists(cid: string): boolean {
-    return this._meta.has(cid);
+    if (this._cache.has(cid)) return true;
+    return !!db.prepare('SELECT 1 FROM vault_records WHERE cid = ?').get(cid);
+  }
+
+  /** List all CIDs for a patient (lightweight — no ciphertext loaded). */
+  listByPatient(patientDID: string): VaultRecord[] {
+    const rows = db.prepare(
+      'SELECT cid, patient_did, data_type, uploaded_at FROM vault_records WHERE patient_did = ? ORDER BY uploaded_at DESC'
+    ).all(patientDID) as any[];
+    return rows.map(r => ({
+      cid: r.cid,
+      patientDID: r.patient_did,
+      dataType: r.data_type as DataType,
+      uploadedAt: r.uploaded_at,
+    }));
   }
 
   /**
-   * Return decoded plaintext records for all CIDs belonging to a patient.
-   * Used by the FL vault data provider — data never leaves the process.
-   * Only records whose plaintext is valid JSON are included.
+   * Return decoded plaintext records for FL training.
+   * Loads from DB if not in cache. Only JSON records with numeric fields included.
    */
   getPlaintextRecords(patientDID: string): Record<string, unknown>[] {
+    const rows = db.prepare(
+      'SELECT cid, plaintext FROM vault_records WHERE patient_did = ?'
+    ).all(patientDID) as any[];
+
     const results: Record<string, unknown>[] = [];
-    for (const meta of this._meta.values()) {
-      if (meta.patientDID !== patientDID) continue;
+    for (const row of rows) {
       try {
-        // Re-derive sym key via ECIES is not possible without the private key.
-        // Instead we store the plaintext alongside ciphertext for FL use only.
-        // See _storePlaintext below.
-        const plain = (meta as any)._plaintext as Buffer | undefined;
+        const plain = row.plaintext as Buffer | null;
         if (!plain) continue;
         const parsed = JSON.parse(plain.toString('utf8'));
         if (parsed && typeof parsed === 'object') results.push(parsed);
-      } catch { /* skip non-JSON records */ }
+      } catch { /* skip non-JSON */ }
     }
     return results;
   }
@@ -157,8 +177,26 @@ export class DataVaultService {
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  private _loadFromDB(cid: string): VaultMeta | undefined {
+    const row = db.prepare('SELECT * FROM vault_records WHERE cid = ?').get(cid) as any;
+    if (!row) return undefined;
+    const meta: VaultMeta = {
+      iv: Buffer.from(row.iv),
+      authTag: Buffer.from(row.auth_tag),
+      encryptedKey: Buffer.from(row.encrypted_key),
+      patientDID: row.patient_did,
+      patientAddress: row.patient_address,
+      dataType: row.data_type as DataType,
+      uploadedAt: row.uploaded_at,
+      ciphertext: Buffer.from(row.ciphertext),
+      plaintext: row.plaintext ? Buffer.from(row.plaintext) : undefined,
+    };
+    this._cache.set(cid, meta);
+    return meta;
+  }
+
   private _authorise(cid: string, token: SignedToken): VaultMeta {
-    const meta = this._meta.get(cid);
+    const meta = this._cache.get(cid) ?? this._loadFromDB(cid);
     if (!meta) throw new Error(`Vault record not found: ${cid}`);
     if (token.cid !== cid) throw new Error('401 Unauthorized: token CID mismatch');
     let signerAddress: string;
