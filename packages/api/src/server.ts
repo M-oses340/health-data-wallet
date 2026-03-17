@@ -2,29 +2,30 @@
  * HTTP server — Express app wiring all platform services into REST endpoints.
  *
  * Routes:
- *   POST /auth/register          → register new patient (returns DID + JWT)
- *   POST /auth/login             → login with DID (returns JWT)
- *   GET  /patient/:did/payments  → payment history
- *   GET  /patient/:did/audit-trail → audit log
- *   GET  /marketplace/datasets   → search listings
- *   POST /marketplace/requests   → submit computation request
- *   POST /vault/upload           → upload + anonymize + list data
- *   POST /consent/revoke         → revoke consent
- *   GET  /health                 → liveness probe
+ *   POST /auth/register              → register new patient (returns DID + JWT)
+ *   POST /auth/register/researcher   → register new researcher (returns DID + JWT)
+ *   POST /auth/login                 → login with DID + role (returns JWT)
+ *   GET  /patient/:did/payments      → payment history
+ *   GET  /patient/:did/audit-trail   → audit log
+ *   GET  /marketplace/datasets       → search listings
+ *   POST /marketplace/requests       → submit computation request (researcher only)
+ *   POST /vault/upload               → upload + anonymize + list data
+ *   POST /consent/revoke             → revoke consent
+ *   GET  /health                     → liveness probe
  */
 import express, { Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto';
 import { WalletService } from './wallet/WalletService';
 import { PatientProfileRepository } from './patient/PatientProfileRepository';
+import { ResearcherProfileRepository } from './researcher/ResearcherProfileRepository';
 import { DataVaultService } from './vault/DataVaultService';
 import { MarketplaceService } from './marketplace/MarketplaceService';
-import { ComputationEngine } from './computation/ComputationEngine';
+import { ComputationEngine, IVaultDataProvider } from './computation/ComputationEngine';
 import { AuditTrailService } from './audit/AuditTrailService';
 import { ComplianceService } from './compliance/ComplianceService';
 import { PlatformOrchestrator } from './orchestrator/PlatformOrchestrator';
 import { buildChainAdapters } from './chain/ContractAdapters';
-import { IVaultDataProvider } from './computation/ComputationEngine';
-import { DataType } from '@health-data/sdk';
+import { DataType, ComputationMethod } from '@health-data/sdk';
 
 // ---------------------------------------------------------------------------
 // Service singletons
@@ -32,6 +33,7 @@ import { DataType } from '@health-data/sdk';
 
 const walletService = new WalletService();
 const profileRepo = new PatientProfileRepository();
+const researcherRepo = new ResearcherProfileRepository();
 const vaultService = new DataVaultService();
 const marketplace = new MarketplaceService();
 const auditTrail = new AuditTrailService();
@@ -40,25 +42,30 @@ const auditTrail = new AuditTrailService();
 const RPC_URL = process.env.BLOCKCHAIN_RPC_URL ?? 'http://localhost:8545';
 const { consentRegistry, consentManager, paymentRouter, onChainPaymentRouter } = buildChainAdapters(RPC_URL);
 
-const computationEngine = new ComputationEngine(consentRegistry, paymentRouter);
-
-// Vault data provider — extracts numeric features from marketplace listings
-// and distributes them across FL client silos for real-data training.
+// Vault data provider — distributes real decoded health records across FL silos.
+// Each patient whose data is in the vault becomes one silo.
 const vaultDataProvider: IVaultDataProvider = {
   async getAnonymizedRecordsForFL(_contractId: string) {
-    const listings = marketplace.searchDatasets({});
-    if (listings.length === 0) return [];
-    // Each listing becomes one FL client silo.
-    // We use listing metadata as feature vectors (real distribution shape).
-    return listings.map(listing => [{
-      minQualityScore: listing.minQualityScore,
-      recordCount: listing.recordCount,
-      categoryHash: listing.category.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0),
-    }]);
+    const { db } = await import('./db');
+    const rows = db.prepare('SELECT did FROM patient_profiles').all() as { did: string }[];
+    const silos: Record<string, number>[][] = [];
+    for (const { did } of rows) {
+      const records = vaultService.getPlaintextRecords(did);
+      if (records.length === 0) continue;
+      const numericRecords = records.map(rec => {
+        const out: Record<string, number> = {};
+        for (const [k, v] of Object.entries(rec)) {
+          if (typeof v === 'number') out[k] = v;
+        }
+        return out;
+      }).filter(r => Object.keys(r).length > 0);
+      if (numericRecords.length > 0) silos.push(numericRecords);
+    }
+    return silos;
   },
 };
 
-const computationEngineWithVault = new ComputationEngine(consentRegistry, paymentRouter, vaultDataProvider);
+const computationEngine = new ComputationEngine(consentRegistry, paymentRouter, vaultDataProvider);
 
 // Anonymizer adapter — calls the Python FL server sidecar
 const FL_URL = process.env.FL_SERVER_URL ?? 'http://localhost:5001';
@@ -80,7 +87,7 @@ const anonymizerAdapter = {
 
 const orchestrator = new PlatformOrchestrator(
   walletService, profileRepo, vaultService, anonymizerAdapter,
-  marketplace, computationEngineWithVault, auditTrail, consentManager, onChainPaymentRouter,
+  marketplace, computationEngine, auditTrail, consentManager, onChainPaymentRouter,
 );
 
 // ---------------------------------------------------------------------------
@@ -118,6 +125,17 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   }
 }
 
+function requireRole(role: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const payload = (req as any).jwtPayload as Record<string, unknown>;
+    if (payload?.role !== role) {
+      res.status(403).json({ error: `Forbidden: ${role} role required` });
+      return;
+    }
+    next();
+  };
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -139,11 +157,33 @@ app.post('/auth/register', (_req, res) => {
   }
 });
 
+app.post('/auth/register/researcher', (req, res) => {
+  try {
+    const { organisation } = req.body as { organisation?: string };
+    const keyPair = walletService.generateKeyPair();
+    const did = walletService.provisionDID(keyPair.publicKey);
+    researcherRepo.create({
+      did,
+      walletAddress: keyPair.address,
+      publicKey: keyPair.publicKey,
+      registeredAt: Date.now(),
+      organisation: organisation ?? '',
+    });
+    const token = signJWT({ did, role: 'researcher' });
+    res.status(201).json({ did, walletAddress: keyPair.address, publicKey: keyPair.publicKey, token });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 app.post('/auth/login', (req, res) => {
   const { did, role } = req.body as { did: string; role: string };
   if (!did || !role) { res.status(400).json({ error: 'did and role required' }); return; }
-  const profile = profileRepo.findByDID(did);
-  if (!profile) { res.status(404).json({ error: 'DID not found' }); return; }
+  if (role === 'researcher') {
+    if (!researcherRepo.exists(did)) { res.status(404).json({ error: 'DID not found' }); return; }
+  } else {
+    if (!profileRepo.findByDID(did)) { res.status(404).json({ error: 'DID not found' }); return; }
+  }
   const token = signJWT({ did, role });
   res.json({ token });
 });
@@ -183,10 +223,46 @@ app.get('/marketplace/datasets', (req, res) => {
   res.json(marketplace.searchDatasets({ category, dataType: dataType as DataType }));
 });
 
-app.post('/marketplace/requests', requireAuth, async (req, res) => {
+// Researcher-only: validate request body, generate contractId, run computation
+app.post('/marketplace/requests', requireAuth, requireRole('researcher'), async (req, res) => {
+  const {
+    listingId, researcherDID, computationMethod, dataCategory,
+    permittedScope, accessDurationSeconds, dataDividendWei,
+  } = req.body as {
+    listingId?: string;
+    researcherDID?: string;
+    computationMethod?: ComputationMethod;
+    dataCategory?: string;
+    permittedScope?: string;
+    accessDurationSeconds?: number;
+    dataDividendWei?: string;
+  };
+
+  // Validate via MarketplaceService
+  const submission = marketplace.submitComputationRequest({
+    researcherDID,
+    dataCategory,
+    computationMethod,
+    permittedScope,
+    accessDurationSeconds,
+    dataDividendWei: dataDividendWei != null ? BigInt(dataDividendWei) : undefined,
+  });
+
+  if (submission.status === 'REJECTED') {
+    res.status(400).json(submission); return;
+  }
+
+  // Verify listing exists if provided
+  if (listingId) {
+    const listings = marketplace.searchDatasets({});
+    if (!listings.find(l => l.listingId === listingId)) {
+      res.status(404).json({ error: `Listing ${listingId} not found` }); return;
+    }
+  }
+
   try {
-    const job = await computationEngineWithVault.initiateComputation(req.body.contractId ?? 'demo');
-    res.status(201).json(job);
+    const job = await computationEngine.initiateComputation(submission.contractId!);
+    res.status(201).json({ ...submission, job });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
   }

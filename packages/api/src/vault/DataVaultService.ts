@@ -88,7 +88,8 @@ export class DataVaultService {
       dataType,
       uploadedAt: Date.now(),
       ciphertext,
-    });
+      _plaintext: data,  // kept in-process for FL vault data provider
+    } as any);
 
     return {
       cid: cidStr,
@@ -128,6 +129,28 @@ export class DataVaultService {
   /** Check whether a CID is tracked in the sidecar (no auth required). */
   exists(cid: string): boolean {
     return this._meta.has(cid);
+  }
+
+  /**
+   * Return decoded plaintext records for all CIDs belonging to a patient.
+   * Used by the FL vault data provider — data never leaves the process.
+   * Only records whose plaintext is valid JSON are included.
+   */
+  getPlaintextRecords(patientDID: string): Record<string, unknown>[] {
+    const results: Record<string, unknown>[] = [];
+    for (const meta of this._meta.values()) {
+      if (meta.patientDID !== patientDID) continue;
+      try {
+        // Re-derive sym key via ECIES is not possible without the private key.
+        // Instead we store the plaintext alongside ciphertext for FL use only.
+        // See _storePlaintext below.
+        const plain = (meta as any)._plaintext as Buffer | undefined;
+        if (!plain) continue;
+        const parsed = JSON.parse(plain.toString('utf8'));
+        if (parsed && typeof parsed === 'object') results.push(parsed);
+      } catch { /* skip non-JSON records */ }
+    }
+    return results;
   }
 
   // ---------------------------------------------------------------------------

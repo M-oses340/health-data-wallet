@@ -40,6 +40,13 @@ class ApiClient {
     return res.data as Map<String, dynamic>;
   }
 
+  /// Register a new researcher — returns { did, walletAddress, publicKey, token }
+  Future<Map<String, dynamic>> registerResearcher({String? organisation}) async {
+    final res = await _dio.post('/auth/register/researcher',
+        data: {if (organisation != null) 'organisation': organisation});
+    return res.data as Map<String, dynamic>;
+  }
+
   /// Login with DID — returns { token }
   Future<Map<String, dynamic>> login(String did, String role) async {
     final res = await _dio.post('/auth/login', data: {'did': did, 'role': role});

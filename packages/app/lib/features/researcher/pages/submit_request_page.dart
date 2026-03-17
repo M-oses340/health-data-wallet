@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/researcher_bloc.dart';
 
 class SubmitRequestPage extends StatefulWidget {
@@ -34,12 +35,18 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
+    // Convert ETH string to wei string (1 ETH = 1e18 wei)
+    final ethVal = double.tryParse(_dividendCtrl.text.trim()) ?? 0.0;
+    final weiVal = BigInt.from((ethVal * 1e18).round()).toString();
+    final auth = context.read<AuthBloc>().state;
+    final researcherDID = auth is AuthAuthenticated ? auth.did : '';
     context.read<ResearcherBloc>().add(SubmitRequest({
+          'researcherDID': researcherDID,
           'dataCategory': _categoryCtrl.text.trim(),
           'permittedScope': _scopeCtrl.text.trim(),
           'computationMethod': _method,
-          'accessDuration': int.parse(_durationCtrl.text.trim()),
-          'dataDividend': _dividendCtrl.text.trim(),
+          'accessDurationSeconds': int.parse(_durationCtrl.text.trim()),
+          'dataDividendWei': weiVal,
         }));
   }
 

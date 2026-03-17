@@ -21,6 +21,14 @@ abstract class AuthEvent extends Equatable {
 /// Register a brand-new patient account (generates DID + wallet on the API).
 class RegisterPatient extends AuthEvent {}
 
+/// Register a brand-new researcher account.
+class RegisterResearcher extends AuthEvent {
+  final String? organisation;
+  const RegisterResearcher({this.organisation});
+  @override
+  List<Object?> get props => [organisation];
+}
+
 /// Login with an existing DID.
 class LoginWithDID extends AuthEvent {
   final String did;
@@ -80,6 +88,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
   AuthBloc(this._api) : super(AuthInitial()) {
     on<RegisterPatient>(_onRegister);
+    on<RegisterResearcher>(_onRegisterResearcher);
     on<LoginWithDID>(_onLogin);
     on<SelectRole>(_onSelectRole);
     on<SignOut>(_onSignOut);
@@ -93,6 +102,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       if (token != null) _api.setAuthToken(token);
       emit(AuthAuthenticated(
         UserRole.patient,
+        data['did'] as String,
+        walletAddress: data['walletAddress'] as String?,
+      ));
+    } catch (e) {
+      emit(AuthError('Registration failed: $e'));
+    }
+  }
+
+  Future<void> _onRegisterResearcher(RegisterResearcher event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      final data = await _api.registerResearcher(organisation: event.organisation);
+      final token = data['token'] as String?;
+      if (token != null) _api.setAuthToken(token);
+      emit(AuthAuthenticated(
+        UserRole.researcher,
         data['did'] as String,
         walletAddress: data['walletAddress'] as String?,
       ));

@@ -11,20 +11,25 @@ class RoleSelectPage extends StatefulWidget {
 
 class _RoleSelectPageState extends State<RoleSelectPage> {
   final _didController = TextEditingController();
+  final _orgController = TextEditingController();
   UserRole _selected = UserRole.patient;
   bool _isRegisterMode = false;
 
   @override
   void dispose() {
     _didController.dispose();
+    _orgController.dispose();
     super.dispose();
   }
 
   void _enter() {
     final did = _didController.text.trim();
     if (_isRegisterMode) {
-      // Register new patient — API generates the DID
-      context.read<AuthBloc>().add(RegisterPatient());
+      if (_selected == UserRole.researcher) {
+        context.read<AuthBloc>().add(RegisterResearcher(organisation: _orgController.text.trim()));
+      } else {
+        context.read<AuthBloc>().add(RegisterPatient());
+      }
       return;
     }
     if (did.isEmpty) return;
@@ -166,31 +171,65 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
                                 ),
                               ),
                             ] else ...[
-                              // Register info
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: scheme.primary.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.info_outline,
-                                        color: scheme.primary, size: 20),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        'A new DID and encrypted wallet will be generated for you automatically.',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                                color: scheme.onSurface),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              // Register: role selector
+                              Text('Select your role',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 12),
+                              SegmentedButton<UserRole>(
+                                segments: const [
+                                  ButtonSegment(
+                                      value: UserRole.patient,
+                                      label: Text('Patient'),
+                                      icon: Icon(Icons.person)),
+                                  ButtonSegment(
+                                      value: UserRole.researcher,
+                                      label: Text('Researcher'),
+                                      icon: Icon(Icons.science)),
+                                ],
+                                selected: {_selected},
+                                onSelectionChanged: (s) =>
+                                    setState(() => _selected = s.first),
                               ),
+                              const SizedBox(height: 16),
+                              if (_selected == UserRole.researcher)
+                                TextField(
+                                  controller: _orgController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Organisation (optional)',
+                                    prefixIcon: const Icon(Icons.business),
+                                    border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12)),
+                                    filled: true,
+                                    fillColor: scheme.surface,
+                                  ),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: scheme.primary.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          color: scheme.primary, size: 20),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          'A new DID and encrypted wallet will be generated for you automatically.',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(color: scheme.onSurface),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                             ],
 
                             const SizedBox(height: 20),

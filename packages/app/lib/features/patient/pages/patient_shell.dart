@@ -6,6 +6,7 @@ import '../bloc/patient_bloc.dart';
 import '../../../core/api_client.dart';
 import 'payments_page.dart';
 import 'audit_trail_page.dart';
+import 'upload_data_page.dart';
 
 class PatientShell extends StatefulWidget {
   const PatientShell({super.key});
@@ -136,7 +137,7 @@ class _PatientShellState extends State<PatientShell> {
                 child: IndexedStack(
                   key: ValueKey(_tab),
                   index: _tab,
-                  children: const [PaymentsPage(), AuditTrailPage()],
+                  children: const [PaymentsPage(), AuditTrailPage(), UploadDataPage()],
                 ),
               ),
             ),
@@ -157,6 +158,11 @@ class _PatientShellState extends State<PatientShell> {
                   icon: Icon(Icons.history_outlined),
                   selectedIcon: Icon(Icons.history),
                   label: 'Audit Trail',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.cloud_upload_outlined),
+                  selectedIcon: Icon(Icons.cloud_upload),
+                  label: 'Upload',
                 ),
               ],
             ),

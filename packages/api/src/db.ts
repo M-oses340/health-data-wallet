@@ -28,6 +28,14 @@ db.exec(`
     data_references           TEXT NOT NULL DEFAULT '[]'
   );
 
+  CREATE TABLE IF NOT EXISTS researcher_profiles (
+    did            TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    public_key     TEXT NOT NULL,
+    registered_at  INTEGER NOT NULL,
+    organisation   TEXT NOT NULL DEFAULT ''
+  );
+
   CREATE TABLE IF NOT EXISTS marketplace_listings (
     listing_id        TEXT PRIMARY KEY,
     category          TEXT NOT NULL,
