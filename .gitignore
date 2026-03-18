@@ -14,3 +14,5 @@ artifacts/
 cache/
 typechain-types/
 .venv/
+.hardhat-cache/
+packages/api/data/

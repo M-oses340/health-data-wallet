@@ -45,6 +45,19 @@ db.exec(`
     available_methods TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS computation_requests (
+    request_id        TEXT PRIMARY KEY,
+    contract_id       TEXT NOT NULL UNIQUE,
+    researcher_did    TEXT NOT NULL,
+    data_category     TEXT NOT NULL,
+    computation_method TEXT NOT NULL,
+    permitted_scope   TEXT NOT NULL,
+    access_duration   INTEGER NOT NULL,
+    data_dividend_wei TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'ACCEPTED',
+    created_at        INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS audit_trail (
     entry_id           TEXT PRIMARY KEY,
     patient_did        TEXT NOT NULL,

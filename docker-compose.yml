@@ -68,17 +68,16 @@ services:
     build:
       context: .
       dockerfile: packages/contracts/Dockerfile
-    network_mode: host
     security_opt:
       - seccomp:unconfined
-    command: sh -c "echo 'Waiting for hardhat RPC...'; until nc -z localhost 8545; do echo 'RPC not ready, retrying in 2s...'; sleep 2; done; echo 'RPC ready, deploying...'; sleep 2; npx hardhat run scripts/deploy.js --network localhost --config hardhat.config.js --no-compile && cp deployed-addresses.json /addresses/deployed-addresses.json"
+    command: sh -c "echo 'Waiting for hardhat RPC...'; until nc -z hardhat 8545; do echo 'RPC not ready, retrying in 2s...'; sleep 2; done; echo 'RPC ready, deploying...'; sleep 2; npx hardhat run scripts/deploy.js --network localhost --config hardhat.config.js --no-compile && cp deployed-addresses.json /addresses/deployed-addresses.json"
     working_dir: /app/packages/contracts
     volumes:
       - ./packages/contracts:/addresses
       - ./.hardhat-cache/compilers-v3/wasm:/root/.cache/hardhat-nodejs/compilers-v3/wasm:ro
     environment:
       - HARDHAT_NETWORK=localhost
-      - HARDHAT_RPC_URL=http://localhost:8545
+      - HARDHAT_RPC_URL=http://hardhat:8545
     depends_on:
       hardhat:
         condition: service_healthy

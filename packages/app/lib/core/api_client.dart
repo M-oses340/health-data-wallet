@@ -89,6 +89,11 @@ class ApiClient {
   // Vault endpoints
   // -------------------------------------------------------------------------
 
+  Future<Map<String, dynamic>> getVaultRecords(String did) async {
+    final res = await _dio.get('/vault/records', queryParameters: {'did': did});
+    return res.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> uploadHealthData({
     required String patientDID,
     required String dataBase64,

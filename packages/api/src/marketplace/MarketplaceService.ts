@@ -73,8 +73,24 @@ export class MarketplaceService {
     if (Object.keys(fieldErrors).length > 0) {
       return { requestId: randomBytes(8).toString('hex'), status: 'REJECTED', fieldErrors };
     }
+    const requestId = randomBytes(8).toString('hex');
     const contractId = '0x' + randomBytes(32).toString('hex');
-    return { requestId: randomBytes(8).toString('hex'), status: 'ACCEPTED', contractId };
+    db.prepare(`
+      INSERT INTO computation_requests
+        (request_id, contract_id, researcher_did, data_category, computation_method,
+         permitted_scope, access_duration, data_dividend_wei, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACCEPTED', ?)
+    `).run(
+      requestId, contractId,
+      request.researcherDID ?? '',
+      request.dataCategory ?? '',
+      request.computationMethod ?? '',
+      request.permittedScope ?? '',
+      request.accessDurationSeconds ?? 0,
+      (request.dataDividendWei ?? 0n).toString(),
+      Date.now(),
+    );
+    return { requestId, status: 'ACCEPTED', contractId };
   }
 
   private _validateRequest(req: Partial<ComputationRequest>): Record<string, string> {
