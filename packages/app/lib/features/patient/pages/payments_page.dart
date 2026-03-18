@@ -35,7 +35,9 @@ class PaymentsPage extends StatelessWidget {
       if (raw != null) total += double.tryParse(raw.toString()) ?? 0;
     }
 
-    final auth = context.read<AuthBloc>().state as AuthAuthenticated;
+    final authState = context.read<AuthBloc>().state;
+    if (authState is! AuthAuthenticated) return const SizedBox.shrink();
+    final auth = authState;
 
     return RefreshIndicator(
       onRefresh: () async {

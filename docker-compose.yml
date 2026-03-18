@@ -4,10 +4,10 @@ services:
     build:
       context: .
       dockerfile: packages/contracts/Dockerfile
+    networks:
+      - app-net
     ports:
       - "8545:8545"
-    security_opt:
-      - seccomp:unconfined
     healthcheck:
       test: ["CMD", "curl", "-sf", "-X", "POST", "http://localhost:8545", "-H", "Content-Type: application/json", "-d", "{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}"]
       interval: 5s
@@ -19,10 +19,10 @@ services:
     build:
       context: .
       dockerfile: packages/fl-server/Dockerfile
+    networks:
+      - app-net
     ports:
       - "5001:5001"
-    security_opt:
-      - seccomp:unconfined
     environment:
       - FLASK_ENV=production
     healthcheck:
@@ -36,8 +36,8 @@ services:
     build:
       context: .
       dockerfile: packages/api/Dockerfile
-    security_opt:
-      - seccomp:unconfined
+    networks:
+      - app-net
     ports:
       - "3000:3000"
     volumes:
@@ -68,9 +68,23 @@ services:
     build:
       context: .
       dockerfile: packages/contracts/Dockerfile
-    security_opt:
-      - seccomp:unconfined
-    command: sh -c "echo 'Waiting for hardhat RPC...'; until nc -z hardhat 8545; do echo 'RPC not ready, retrying in 2s...'; sleep 2; done; echo 'RPC ready, deploying...'; sleep 2; npx hardhat run scripts/deploy.js --network localhost --config hardhat.config.js --no-compile && cp deployed-addresses.json /addresses/deployed-addresses.json"
+    networks:
+      - app-net
+    command:
+      - sh
+      - -c
+      - |
+        echo 'Waiting for hardhat RPC...'
+        until curl -sf -X POST http://hardhat:8545 \
+          -H 'Content-Type: application/json' \
+          -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; do
+          echo 'RPC not ready, retrying in 2s...'
+          sleep 2
+        done
+        echo 'RPC ready, deploying...'
+        sleep 2
+        npx hardhat run scripts/deploy.js --network localhost --config hardhat.config.js --no-compile
+        cp deployed-addresses.json /addresses/deployed-addresses.json
     working_dir: /app/packages/contracts
     volumes:
       - ./packages/contracts:/addresses
@@ -85,3 +99,7 @@ services:
 
 volumes:
   api_data:
+
+networks:
+  app-net:
+    driver: bridge

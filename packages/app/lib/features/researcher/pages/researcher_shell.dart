@@ -19,7 +19,11 @@ class _ResearcherShellState extends State<ResearcherShell> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.read<AuthBloc>().state as AuthAuthenticated;
+    final authState = context.watch<AuthBloc>().state;
+    if (authState is! AuthAuthenticated) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final auth = authState;
     final scheme = Theme.of(context).colorScheme;
     final shortAddr = _shortAddr(auth.did);
 

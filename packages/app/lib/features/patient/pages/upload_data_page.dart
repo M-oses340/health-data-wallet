@@ -33,7 +33,9 @@ class _UploadDataPageState extends State<UploadDataPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; _successCid = null; });
 
-    final auth = context.read<AuthBloc>().state as AuthAuthenticated;
+    final authState = context.read<AuthBloc>().state;
+    if (authState is! AuthAuthenticated) return;
+    final auth = authState;
     final payload = <String, dynamic>{};
     if (_heartRateCtrl.text.isNotEmpty) {
       payload['heartRate'] = double.parse(_heartRateCtrl.text.trim());

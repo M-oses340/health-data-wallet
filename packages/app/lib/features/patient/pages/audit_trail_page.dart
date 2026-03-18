@@ -28,8 +28,9 @@ class AuditTrailPage extends StatelessWidget {
         }
         if (state is PatientLoaded) {
           final entries = state.auditTrail;
-          final auth =
-              context.read<AuthBloc>().state as AuthAuthenticated;
+          final authState = context.read<AuthBloc>().state;
+          if (authState is! AuthAuthenticated) return const SizedBox.shrink();
+          final auth = authState;
 
           if (entries.isEmpty) {
             return RefreshIndicator(
