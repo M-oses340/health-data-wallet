@@ -1,5 +1,6 @@
 import { PatientProfileRepository, PatientProfile } from './PatientProfileRepository';
 import { DataType } from '@health-data/sdk';
+import { db } from '../db';
 
 const makeProfile = (did: string): PatientProfile => ({
   did,
@@ -12,6 +13,10 @@ const makeProfile = (did: string): PatientProfile => ({
 
 describe('PatientProfileRepository', () => {
   let repo: PatientProfileRepository;
+
+  beforeEach(() => {
+    db.prepare('DELETE FROM patient_profiles').run();
+  });
 
   beforeEach(() => {
     repo = new PatientProfileRepository();

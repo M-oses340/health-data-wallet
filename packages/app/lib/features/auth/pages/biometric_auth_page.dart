@@ -79,17 +79,22 @@ class _BiometricAuthPageState extends State<BiometricAuthPage>
     _pulseCtrl.repeat();
 
     try {
-      final canCheck = await _auth.canCheckBiometrics;
       final isSupported = await _auth.isDeviceSupported();
+      final canCheck = await _auth.canCheckBiometrics;
+      final available = await _auth.getAvailableBiometrics();
+
+      debugPrint('isDeviceSupported: $isSupported');
+      debugPrint('canCheckBiometrics: $canCheck');
+      debugPrint('availableBiometrics: $available');
 
       bool authenticated = false;
 
-      if (canCheck && isSupported) {
+      if (isSupported) {
         authenticated = await _auth.authenticate(
           localizedReason: 'Authenticate to access your Health Data Wallet',
         );
       } else {
-        // Emulator / device without biometrics — allow through for dev
+        // No biometric hardware at all — allow through for dev/emulator
         await Future.delayed(const Duration(milliseconds: 1500));
         authenticated = true;
       }

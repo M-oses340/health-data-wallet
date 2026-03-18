@@ -51,7 +51,7 @@ class _UploadDataPageState extends State<UploadDataPage> {
       final result = await context.read<ApiClient>().uploadHealthData(
         patientDID: auth.did,
         dataBase64: dataBase64,
-        dataType: 'HEALTH_METRICS',
+        dataType: _category == 'labs' ? 'EHR' : 'WEARABLE',
         category: _category,
       );
       setState(() { _successCid = result['cid'] as String?; _loading = false; });

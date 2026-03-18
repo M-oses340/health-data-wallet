@@ -57,6 +57,7 @@ export interface RegistrationResult {
 export interface UploadAndListResult {
   cid: string;
   qualityScore: number;
+  listingId: string;
 }
 
 export interface ComputationFlowResult {
@@ -147,12 +148,18 @@ export class PlatformOrchestrator {
     // Store CID in patient profile
     this.profileRepo.addDataReference(patientDID, ref);
 
-    // Increment record count on matching seed listing (don't create new listings per upload)
-    this.marketplace.incrementRecordCount(category, dataType);
+    // Register a new marketplace listing for this upload
+    const listing = this.marketplace.registerDataset({
+      category,
+      dataType,
+      minQualityScore: anonResult.qualityScore,
+      recordCount: 1,
+      availableMethods: ['FEDERATED_LEARNING', 'ZKP'],
+    });
 
     this.auditTrail.writeEntry({ patientDID, eventType: 'DATA_ANONYMIZED', dataRef: ref.cid });
 
-    return { cid: ref.cid, qualityScore: anonResult.qualityScore };
+    return { cid: ref.cid, qualityScore: anonResult.qualityScore, listingId: listing.listingId };
   }
 
   // ---------------------------------------------------------------------------

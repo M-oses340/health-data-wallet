@@ -4,6 +4,7 @@
  */
 import { MarketplaceService } from './MarketplaceService';
 import { ComputationRequest } from '@health-data/sdk';
+import { db } from '../db';
 
 function makeSvc() {
   const svc = new MarketplaceService();
@@ -23,6 +24,9 @@ const validRequest: ComputationRequest = {
 };
 
 describe('MarketplaceService — searchDatasets', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM marketplace_listings').run();
+  });
 
   it('returns all listings when query is empty', () => {
     const svc = makeSvc();

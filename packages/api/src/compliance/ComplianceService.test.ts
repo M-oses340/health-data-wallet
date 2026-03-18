@@ -6,6 +6,7 @@ import { ComplianceService, IConsentStore, IVaultStore, IPaymentStore } from './
 import { AuditTrailService } from '../audit/AuditTrailService';
 import { PatientProfileRepository } from '../patient/PatientProfileRepository';
 import { DataDividendRecord } from '@health-data/sdk';
+import { db } from '../db';
 
 // ---------------------------------------------------------------------------
 // Stubs
@@ -45,6 +46,10 @@ const DID = 'did:ethr:0xPatient';
 // ---------------------------------------------------------------------------
 
 describe('ComplianceService — scope enforcement', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM audit_trail').run();
+    db.prepare('DELETE FROM patient_profiles').run();
+  });
 
   it('allows when stated purpose matches consented scope', async () => {
     const { svc } = makeSvc(makeConsentStore('cardiology-research'));
@@ -104,6 +109,10 @@ describe('ComplianceService — scope enforcement', () => {
 // ---------------------------------------------------------------------------
 
 describe('ComplianceService — GDPR erasure', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM audit_trail').run();
+    db.prepare('DELETE FROM patient_profiles').run();
+  });
 
   it('returns the number of deleted vault records', async () => {
     const { svc } = makeSvc(makeConsentStore(), makeVaultStore(5));
@@ -135,6 +144,10 @@ describe('ComplianceService — GDPR erasure', () => {
 // ---------------------------------------------------------------------------
 
 describe('ComplianceService — GDPR access export', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM audit_trail').run();
+    db.prepare('DELETE FROM patient_profiles').run();
+  });
 
   it('export contains the correct patientDID', async () => {
     const { svc } = makeSvc();

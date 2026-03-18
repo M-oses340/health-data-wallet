@@ -58,12 +58,12 @@ class ApiClient {
   // -------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> getPayments(String did) async {
-    final res = await _dio.get('/patient/$did/payments');
+    final res = await _dio.get('/patient/payments', queryParameters: {'did': did});
     return res.data as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getAuditTrail(String did) async {
-    final res = await _dio.get('/patient/$did/audit-trail');
+    final res = await _dio.get('/patient/audit-trail', queryParameters: {'did': did});
     return res.data as Map<String, dynamic>;
   }
 

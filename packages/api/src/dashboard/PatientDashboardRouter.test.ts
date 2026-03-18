@@ -7,6 +7,7 @@ import request from 'supertest';
 import { createPatientDashboardRouter, IPaymentStore } from './PatientDashboardRouter';
 import { AuditTrailService } from '../audit/AuditTrailService';
 import { DataDividendRecord } from '@health-data/sdk';
+import { db } from '../db';
 
 // supertest may not be installed — use a lightweight alternative via http
 // We'll test the router logic directly using express + supertest pattern
@@ -45,6 +46,7 @@ const samplePayments: DataDividendRecord[] = [
 ];
 
 describe('GET /patient/:did/payments', () => {
+  beforeEach(() => { db.prepare('DELETE FROM audit_trail').run(); });
 
   it('returns 200 with payment records', async () => {
     const audit = new AuditTrailService();
@@ -81,6 +83,7 @@ describe('GET /patient/:did/payments', () => {
 });
 
 describe('GET /patient/:did/audit-trail', () => {
+  beforeEach(() => { db.prepare('DELETE FROM audit_trail').run(); });
 
   it('returns 200 with audit entries', async () => {
     const audit = new AuditTrailService();

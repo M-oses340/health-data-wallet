@@ -10,6 +10,7 @@ import { MarketplaceService } from '../marketplace/MarketplaceService';
 import { ComputationEngine, IConsentRegistry, IPaymentRouter } from '../computation/ComputationEngine';
 import { AuditTrailService } from '../audit/AuditTrailService';
 import { ComputationRequest } from '@health-data/sdk';
+import { db } from '../db';
 
 // ---------------------------------------------------------------------------
 // Stubs
@@ -92,6 +93,13 @@ const validRequest: ComputationRequest = {
   accessDurationSeconds: 86400,
   dataDividendWei: BigInt('100000000000000000'),
 };
+
+beforeEach(() => {
+  db.prepare('DELETE FROM audit_trail').run();
+  db.prepare('DELETE FROM patient_profiles').run();
+  db.prepare('DELETE FROM marketplace_listings').run();
+  db.prepare('DELETE FROM vault_records').run();
+});
 
 // ---------------------------------------------------------------------------
 // Flow A: Registration

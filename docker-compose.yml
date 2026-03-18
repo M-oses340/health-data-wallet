@@ -6,8 +6,10 @@ services:
       dockerfile: packages/contracts/Dockerfile
     ports:
       - "8545:8545"
+    security_opt:
+      - seccomp:unconfined
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8545"]
+      test: ["CMD", "curl", "-sf", "-X", "POST", "http://localhost:8545", "-H", "Content-Type: application/json", "-d", "{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}"]
       interval: 5s
       timeout: 3s
       retries: 15
@@ -19,6 +21,8 @@ services:
       dockerfile: packages/fl-server/Dockerfile
     ports:
       - "5001:5001"
+    security_opt:
+      - seccomp:unconfined
     environment:
       - FLASK_ENV=production
     healthcheck:
@@ -32,6 +36,8 @@ services:
     build:
       context: .
       dockerfile: packages/api/Dockerfile
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "3000:3000"
     volumes:
@@ -62,13 +68,17 @@ services:
     build:
       context: .
       dockerfile: packages/contracts/Dockerfile
-    command: sh -c "npx hardhat run scripts/deploy.ts --network localhost && cp deployed-addresses.json /addresses/deployed-addresses.json"
+    network_mode: host
+    security_opt:
+      - seccomp:unconfined
+    command: sh -c "echo 'Waiting for hardhat RPC...'; until nc -z localhost 8545; do echo 'RPC not ready, retrying in 2s...'; sleep 2; done; echo 'RPC ready, deploying...'; sleep 2; npx hardhat run scripts/deploy.js --network localhost --config hardhat.config.js --no-compile && cp deployed-addresses.json /addresses/deployed-addresses.json"
     working_dir: /app/packages/contracts
     volumes:
       - ./packages/contracts:/addresses
+      - ./.hardhat-cache/compilers-v3/wasm:/root/.cache/hardhat-nodejs/compilers-v3/wasm:ro
     environment:
       - HARDHAT_NETWORK=localhost
-      - HARDHAT_RPC_URL=http://hardhat:8545
+      - HARDHAT_RPC_URL=http://localhost:8545
     depends_on:
       hardhat:
         condition: service_healthy

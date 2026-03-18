@@ -7,5 +7,5 @@
       "@health-data/sdk": ["../sdk/src"]
     }
   },
-  "include": ["src", "hardhat.config.ts"]
+  "include": ["src"]
 }

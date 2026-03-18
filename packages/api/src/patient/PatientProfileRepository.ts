@@ -16,18 +16,26 @@ export interface PatientProfile {
 
 export class PatientProfileRepository {
   create(profile: PatientProfile): void {
-    db.prepare(`
-      INSERT INTO patient_profiles
-        (did, wallet_address, public_key, registered_at, minimum_quality_threshold, data_references)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      profile.did,
-      profile.walletAddress,
-      profile.publicKey,
-      profile.registeredAt,
-      profile.minimumQualityThreshold,
-      JSON.stringify(profile.dataReferences),
-    );
+    try {
+      db.prepare(`
+        INSERT INTO patient_profiles
+          (did, wallet_address, public_key, registered_at, minimum_quality_threshold, data_references)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        profile.did,
+        profile.walletAddress,
+        profile.publicKey,
+        profile.registeredAt,
+        profile.minimumQualityThreshold,
+        JSON.stringify(profile.dataReferences),
+      );
+    } catch (e: unknown) {
+      const msg = (e as Error).message ?? '';
+      if (msg.includes('UNIQUE constraint failed')) {
+        throw new Error(`Profile already exists for DID: ${profile.did}`);
+      }
+      throw e;
+    }
   }
 
   findByDID(did: string): PatientProfile | undefined {

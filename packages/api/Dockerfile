@@ -4,12 +4,15 @@ WORKDIR /app
 # Install build tools for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
-# Copy monorepo root configs
+# Copy monorepo root configs and pre-installed node_modules
 COPY package.json package-lock.json tsconfig.base.json ./
+COPY node_modules ./node_modules
 COPY packages/sdk ./packages/sdk
 COPY packages/api ./packages/api
 
-RUN npm ci
+# Rebuild better-sqlite3 native binding for this platform
+RUN npm rebuild better-sqlite3
+
 RUN npm run build --workspace=packages/sdk
 RUN npm run build --workspace=packages/api
 

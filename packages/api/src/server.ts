@@ -107,7 +107,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   try {
     (req as any).jwtPayload = verifyJWT(auth.slice(7));
     next();
-  } catch {
+  } catch (e: unknown) {
+    const msg = (e as Error).message;
+    if (msg === 'Token expired') {
+      res.status(401).json({ error: 'Token expired' }); return;
+    }
     res.status(401).json({ error: 'Invalid token' });
   }
 }
@@ -171,6 +175,12 @@ app.post('/auth/login', (req, res) => {
   } else {
     if (!profileRepo.findByDID(did)) { res.status(404).json({ error: 'DID not found' }); return; }
   }
+  const token = signJWT({ did, role });
+  res.json({ token });
+});
+
+app.post('/auth/refresh', requireAuth, (req, res) => {
+  const { did, role } = (req as any).jwtPayload as { did: string; role: string };
   const token = signJWT({ did, role });
   res.json({ token });
 });

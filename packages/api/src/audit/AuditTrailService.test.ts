@@ -4,11 +4,15 @@
  */
 import { AuditTrailService } from './AuditTrailService';
 import { AuditEventType } from '@health-data/sdk';
+import { db } from '../db';
 
 const DID_A = 'did:ethr:0xPatientA';
 const DID_B = 'did:ethr:0xPatientB';
 
 describe('AuditTrailService', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM audit_trail').run();
+  });
 
   // --- writeEntry ---
 
