@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:local_auth_android/local_auth_android.dart';
 
 /// Biometric authentication gate.
 ///
@@ -92,6 +94,15 @@ class _BiometricAuthPageState extends State<BiometricAuthPage>
       if (isSupported) {
         authenticated = await _auth.authenticate(
           localizedReason: 'Authenticate to access your Health Data Wallet',
+          authMessages: [
+            AndroidAuthMessages(
+              signInTitle: 'Health Data Wallet',
+              signInHint: 'Touch the fingerprint sensor',
+              cancelButton: 'Cancel',
+            ),
+          ],
+          biometricOnly: true,
+          persistAcrossBackgrounding: true,
         );
       } else {
         // No biometric hardware at all — allow through for dev/emulator
@@ -118,7 +129,33 @@ class _BiometricAuthPageState extends State<BiometricAuthPage>
         });
         _shakeCtrl.forward(from: 0);
       }
-    } catch (_) {
+    } on PlatformException catch (e) {
+      debugPrint('Biometric PlatformException: ${e.code} — ${e.message}');
+      if (!mounted) return;
+      _pulseCtrl.stop();
+      String msg;
+      switch (e.code) {
+        case 'NotAvailable':
+        case 'NotEnrolled':
+          msg = 'Biometrics not set up on this device.';
+          break;
+        case 'LockedOut':
+        case 'PermanentlyLockedOut':
+          msg = 'Too many attempts. Try again later.';
+          break;
+        case 'PasscodeNotSet':
+          msg = 'No screen lock set. Enable a PIN or fingerprint in Settings.';
+          break;
+        default:
+          msg = 'Biometric error. Try again.';
+      }
+      setState(() {
+        _state = _AuthState.failed;
+        _message = msg;
+      });
+      _shakeCtrl.forward(from: 0);
+    } catch (e) {
+      debugPrint('Biometric auth error: $e');
       if (!mounted) return;
       _pulseCtrl.stop();
       setState(() {
