@@ -129,7 +129,7 @@ class _ResearcherShellState extends State<ResearcherShell> {
                                         .showSnackBar(const SnackBar(
                                       content: Text(
                                           'Address copied to clipboard'),
-                                      duration: Duration(seconds: 2),
+                                      duration: Duration(seconds: 4),
                                     ));
                                   },
                                   child: Row(
@@ -154,11 +154,14 @@ class _ResearcherShellState extends State<ResearcherShell> {
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: Icon(Icons.logout,
-                                color: scheme.onSecondary),
-                            onPressed: () =>
-                                context.read<AuthBloc>().add(SignOut()),
+                          Semantics(
+                            label: 'Sign out',
+                            child: IconButton(
+                              icon: Icon(Icons.logout,
+                                  color: scheme.onSecondary),
+                              onPressed: () =>
+                                  context.read<AuthBloc>().add(SignOut()),
+                            ),
                           ),
                         ],
                       ),

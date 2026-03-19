@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 import '../bloc/patient_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/api_client.dart';
+
+final _dateFmt = DateFormat('d MMM yyyy, HH:mm');
 
 class PaymentsPage extends StatelessWidget {
   const PaymentsPage({super.key});
@@ -132,6 +135,7 @@ class PaymentsPage extends StatelessWidget {
   }
 
   Widget _errorView(BuildContext context, String message) {
+    final authState = context.read<AuthBloc>().state;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -140,6 +144,14 @@ class PaymentsPage extends StatelessWidget {
           const SizedBox(height: 12),
           Text('Error: $message',
               style: Theme.of(context).textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          if (authState is AuthAuthenticated)
+            FilledButton(
+              onPressed: () => context
+                  .read<PatientBloc>()
+                  .add(LoadPatientData(authState.did)),
+              child: const Text('Retry'),
+            ),
         ],
       ),
     );
@@ -203,6 +215,7 @@ class _PaymentCardState extends State<_PaymentCard> {
           const SnackBar(
             content: Text('Consent revoked'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
           ),
         );
         final authState = authBloc.state;
@@ -216,6 +229,7 @@ class _PaymentCardState extends State<_PaymentCard> {
           SnackBar(
             content: Text('Failed to revoke: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -231,10 +245,8 @@ class _PaymentCardState extends State<_PaymentCard> {
     final contractId = widget.payment['contractId']?.toString() ?? '—';
     final ts = widget.payment['timestamp'];
     final dateStr = ts != null
-        ? DateTime.fromMillisecondsSinceEpoch((ts as int) * 1000)
-            .toLocal()
-            .toString()
-            .substring(0, 16)
+        ? _dateFmt.format(
+            DateTime.fromMillisecondsSinceEpoch((ts as int) * 1000).toLocal())
         : '—';
 
     final shortId = contractId.length > 20
@@ -245,7 +257,9 @@ class _PaymentCardState extends State<_PaymentCard> {
       elevation: 0,
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
+      child: AbsorbPointer(
+        absorbing: _revoking,
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -278,11 +292,12 @@ class _PaymentCardState extends State<_PaymentCard> {
                       const SizedBox(height: 2),
                       GestureDetector(
                         onTap: () {
+                          HapticFeedback.lightImpact();
                           Clipboard.setData(ClipboardData(text: contractId));
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Contract ID copied'),
-                              duration: Duration(seconds: 2),
+                              duration: Duration(seconds: 4),
                             ),
                           );
                         },
@@ -311,31 +326,36 @@ class _PaymentCardState extends State<_PaymentCard> {
               ],
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _revoking
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : OutlinedButton.icon(
-                      onPressed: () => _revoke(context),
-                      icon: const Icon(Icons.block, size: 16),
-                      label: const Text('Revoke consent'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                        textStyle: const TextStyle(fontSize: 12),
+            if (contractId != '—' && widget.payment['contractId'] != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: _revoking
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Semantics(
+                        label: 'Revoke consent for contract $shortId',
+                        child: OutlinedButton.icon(
+                          onPressed: () => _revoke(context),
+                          icon: const Icon(Icons.block, size: 16),
+                          label: const Text('Revoke consent'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
                       ),
-                    ),
-            ),
+              ),
           ],
         ),
+      ),
       ),
     );
   }

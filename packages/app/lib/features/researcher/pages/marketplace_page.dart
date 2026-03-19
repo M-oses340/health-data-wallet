@@ -64,14 +64,18 @@ class _MarketplacePageState extends State<MarketplacePage> {
                           _TypeChip(
                             label: 'All',
                             selected: _selectedType == null,
-                            onTap: () =>
-                                setState(() => _selectedType = null),
+                            onTap: () {
+                              setState(() => _selectedType = null);
+                              _search();
+                            },
                           ),
                           ..._dataTypes.map((t) => _TypeChip(
                                 label: t,
                                 selected: _selectedType == t,
-                                onTap: () =>
-                                    setState(() => _selectedType = t),
+                                onTap: () {
+                                  setState(() => _selectedType = t);
+                                  _search();
+                                },
                               )),
                         ],
                       ),
@@ -98,7 +102,7 @@ class _MarketplacePageState extends State<MarketplacePage> {
           child: BlocBuilder<ResearcherBloc, ResearcherState>(
             builder: (context, state) {
               if (state is ResearcherLoading) {
-                return const Center(child: CircularProgressIndicator());
+                return _MarketplaceSkeletonList();
               }
               if (state is ResearcherError) {
                 return Center(
@@ -109,6 +113,11 @@ class _MarketplacePageState extends State<MarketplacePage> {
                           size: 48, color: Colors.red),
                       const SizedBox(height: 12),
                       Text('Error: ${state.message}'),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _search,
+                        child: const Text('Retry'),
+                      ),
                     ],
                   ),
                 );
@@ -150,9 +159,12 @@ class _TypeChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
+      child: Semantics(
+        label: 'Filter by $label',
+        button: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -172,6 +184,7 @@ class _TypeChip extends StatelessWidget {
                       selected ? FontWeight.w600 : FontWeight.normal,
                 ),
           ),
+        ),
         ),
       ),
     );
@@ -368,8 +381,132 @@ class _EmptySearch extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   )),
+          const SizedBox(height: 4),
+          Text('Try a different category or data type filter.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  )),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton loader for marketplace
+// ---------------------------------------------------------------------------
+
+class _MarketplaceSkeletonList extends StatefulWidget {
+  @override
+  State<_MarketplaceSkeletonList> createState() =>
+      _MarketplaceSkeletonListState();
+}
+
+class _MarketplaceSkeletonListState extends State<_MarketplaceSkeletonList>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat(reverse: true);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) {
+        final opacity = 0.3 + _anim.value * 0.4;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: List.generate(
+            3,
+            (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                height: 140,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: opacity),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.primary.withValues(alpha: opacity * 0.5),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 14,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: scheme.onSurface.withValues(alpha: opacity * 0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 12,
+                            width: 120,
+                            decoration: BoxDecoration(
+                              color: scheme.onSurface.withValues(alpha: opacity * 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Container(
+                                height: 24,
+                                width: 90,
+                                decoration: BoxDecoration(
+                                  color: scheme.onSurface.withValues(alpha: opacity * 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                height: 24,
+                                width: 80,
+                                decoration: BoxDecoration(
+                                  color: scheme.onSurface.withValues(alpha: opacity * 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

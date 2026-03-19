@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:intl/intl.dart';
 import '../bloc/patient_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
+
+final _auditDateFmt = DateFormat('d MMM yyyy, HH:mm');
 
 class AuditTrailPage extends StatelessWidget {
   const AuditTrailPage({super.key});
@@ -15,6 +18,7 @@ class AuditTrailPage extends StatelessWidget {
           return _SkeletonTimeline();
         }
         if (state is PatientError) {
+          final authState = context.read<AuthBloc>().state;
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -22,6 +26,14 @@ class AuditTrailPage extends StatelessWidget {
                 const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 12),
                 Text('Error: ${state.message}'),
+                const SizedBox(height: 16),
+                if (authState is AuthAuthenticated)
+                  FilledButton(
+                    onPressed: () => context
+                        .read<PatientBloc>()
+                        .add(LoadPatientData(authState.did)),
+                    child: const Text('Retry'),
+                  ),
               ],
             ),
           );
@@ -88,10 +100,8 @@ class _TimelineEntry extends StatelessWidget {
     final contractId = entry['contractId']?.toString();
     final ts = entry['timestamp'];
     final dateStr = ts != null
-        ? DateTime.fromMillisecondsSinceEpoch(ts as int)
-            .toLocal()
-            .toString()
-            .substring(0, 16)
+        ? _auditDateFmt.format(
+            DateTime.fromMillisecondsSinceEpoch(ts as int).toLocal())
         : '—';
 
     return IntrinsicHeight(
@@ -151,12 +161,13 @@ class _TimelineEntry extends StatelessWidget {
                         const SizedBox(height: 8),
                         GestureDetector(
                           onTap: () {
+                            HapticFeedback.lightImpact();
                             Clipboard.setData(
                                 ClipboardData(text: contractId));
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('Contract ID copied'),
-                                duration: Duration(seconds: 2),
+                                duration: Duration(seconds: 4),
                               ),
                             );
                           },

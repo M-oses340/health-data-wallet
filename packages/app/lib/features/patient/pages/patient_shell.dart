@@ -40,6 +40,7 @@ class _PatientShellState extends State<PatientShell> {
             body: NestedScrollView(
               headerSliverBuilder: (ctx, _) => [
                 SliverAppBar(
+                  title: Text(auth.name?.isNotEmpty == true ? auth.name! : 'Patient Wallet'),
                   expandedHeight: 120,
                   pinned: true,
                   flexibleSpace: FlexibleSpaceBar(
@@ -122,13 +123,14 @@ class _PatientShellState extends State<PatientShell> {
                                                 fontWeight: FontWeight.bold)),
                                     GestureDetector(
                                       onTap: () {
+                                        HapticFeedback.lightImpact();
                                         Clipboard.setData(
                                             ClipboardData(text: auth.did));
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(const SnackBar(
                                           content:
                                               Text('DID copied to clipboard'),
-                                          duration: Duration(seconds: 2),
+                                          duration: Duration(seconds: 4),
                                         ));
                                       },
                                       child: Row(
@@ -153,19 +155,23 @@ class _PatientShellState extends State<PatientShell> {
                                   ],
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(Icons.refresh,
-                                    color: scheme.onPrimary),
-                                onPressed: () => context
-                                    .read<PatientBloc>()
-                                    .add(LoadPatientData(auth.did)),
+                              Semantics(
+                                label: 'Refresh data',
+                                child: IconButton(
+                                  icon: Icon(Icons.refresh,
+                                      color: scheme.onPrimary),
+                                  onPressed: () => context
+                                      .read<PatientBloc>()
+                                      .add(LoadPatientData(auth.did)),
+                                ),
                               ),
-                              IconButton(
-                                icon: Icon(Icons.logout,
-                                    color: scheme.onPrimary),
-                                onPressed: () => context
-                                    .read<AuthBloc>()
-                                    .add(SignOut()),
+                              Semantics(
+                                label: 'Sign out',
+                                child: IconButton(
+                                  icon: Icon(Icons.logout,
+                                      color: scheme.onPrimary),
+                                  onPressed: () => _confirmLogout(context),
+                                ),
                               ),
                             ],
                           ),
@@ -213,6 +219,30 @@ class _PatientShellState extends State<PatientShell> {
         },
       ),
     );
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final authBloc = context.read<AuthBloc>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You will need to sign in again to access your account.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      authBloc.add(SignOut());
+    }
   }
 
   String _shortId(String did) {

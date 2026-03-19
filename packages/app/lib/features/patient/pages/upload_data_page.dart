@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/api_client.dart';
@@ -88,6 +89,13 @@ class _ManualEntryTabState extends State<_ManualEntryTab> {
   }
 
   Future<void> _upload() async {
+    final allEmpty = _heartRateCtrl.text.isEmpty &&
+        _spo2Ctrl.text.isEmpty &&
+        _tempCtrl.text.isEmpty;
+    if (allEmpty) {
+      setState(() => _error = 'Please enter at least one metric value.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     setState(() { _loading = true; _error = null; _successCid = null; });
 
@@ -115,6 +123,7 @@ class _ManualEntryTabState extends State<_ManualEntryTab> {
         category: _category,
       );
       setState(() { _successCid = result['cid'] as String?; _loading = false; });
+      HapticFeedback.lightImpact();
       _heartRateCtrl.clear();
       _spo2Ctrl.clear();
       _tempCtrl.clear();
@@ -269,6 +278,7 @@ class _FilePickerTabState extends State<_FilePickerTab> {
         category: _category,
       );
       setState(() { _successCid = result['cid'] as String?; _loading = false; _pickedFile = null; });
+      HapticFeedback.lightImpact();
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
