@@ -7,6 +7,7 @@ import 'features/patient/bloc/patient_bloc.dart';
 import 'features/researcher/bloc/researcher_bloc.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MultiRepositoryProvider(
       providers: [
@@ -15,7 +16,8 @@ void main() {
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (ctx) => AuthBloc(ctx.read<ApiClient>()),
+            create: (ctx) => AuthBloc(ctx.read<ApiClient>())
+              ..add(RestoreSession()),
           ),
           BlocProvider(
             create: (ctx) => PatientBloc(ctx.read<ApiClient>()),

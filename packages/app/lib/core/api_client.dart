@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'env.dart';
+import 'secure_storage.dart';
 
 /// Thin wrapper around Dio.
 /// Set API_URL at build time: --dart-define=API_URL=https://your-api.com
@@ -7,15 +8,45 @@ class ApiClient {
   static String get baseUrl => Env.apiUrl;
 
   final Dio _dio;
+  final SecureStorageService storage = SecureStorageService();
   String? _authToken;
+  bool _refreshing = false;
 
-  ApiClient()
-      : _dio = Dio(BaseOptions(
-          baseUrl: Env.apiUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 30),
-          headers: {'Content-Type': 'application/json'},
-        ));
+  ApiClient() : _dio = Dio(BaseOptions(
+      baseUrl: Env.apiUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 30),
+      headers: {'Content-Type': 'application/json'},
+    )) {
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (err, handler) async {
+        // Auto-refresh on 401 Token expired (once)
+        if (err.response?.statusCode == 401 &&
+            err.response?.data?['error'] == 'Token expired' &&
+            !_refreshing &&
+            _authToken != null) {
+          _refreshing = true;
+          try {
+            final res = await _dio.post('/auth/refresh');
+            final newToken = res.data['token'] as String;
+            setAuthToken(newToken);
+            // Persist updated token
+            await storage.saveToken(newToken);
+            // Retry original request
+            final opts = err.requestOptions;
+            opts.headers['Authorization'] = 'Bearer $newToken';
+            final retried = await _dio.fetch(opts);
+            return handler.resolve(retried);
+          } catch (_) {
+            // Refresh failed — let the error propagate so AuthBloc can sign out
+          } finally {
+            _refreshing = false;
+          }
+        }
+        return handler.next(err);
+      },
+    ));
+  }
 
   /// Set the JWT token after login — all subsequent requests will include it.
   void setAuthToken(String token) {

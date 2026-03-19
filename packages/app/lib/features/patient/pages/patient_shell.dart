@@ -60,27 +60,35 @@ class _PatientShellState extends State<PatientShell> {
                                 height: 44,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: scheme.onPrimary
-                                      .withValues(alpha: 0.2),
+                                  color: scheme.onPrimary.withValues(alpha: 0.2),
                                 ),
-                                child: Icon(Icons.person,
-                                    color: scheme.onPrimary, size: 24),
+                                child: Center(
+                                  child: Text(
+                                    _initials(auth.name),
+                                    style: TextStyle(
+                                      color: scheme.onPrimary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Patient Wallet',
+                                    Text(
+                                      auth.name?.isNotEmpty == true
+                                          ? auth.name!
+                                          : 'Patient Wallet',
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleMedium
                                             ?.copyWith(
                                                 color: scheme.onPrimary,
-                                                fontWeight:
-                                                    FontWeight.bold)),
+                                                fontWeight: FontWeight.bold)),
                                     GestureDetector(
                                       onTap: () {
                                         Clipboard.setData(
@@ -179,5 +187,12 @@ class _PatientShellState extends State<PatientShell> {
   String _shortId(String did) {
     if (did.length <= 20) return did;
     return '${did.substring(0, 10)}…${did.substring(did.length - 6)}';
+  }
+
+  String _initials(String? name) {
+    if (name == null || name.isEmpty) return 'P';
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return name[0].toUpperCase();
   }
 }

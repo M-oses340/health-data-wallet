@@ -42,6 +42,7 @@ class _HealthDataAppState extends State<HealthDataApp> {
             )
           : BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
+                // Spinner only during the initial session restore
                 if (state is AuthLoading) {
                   return const Scaffold(
                     body: Center(child: CircularProgressIndicator()),
