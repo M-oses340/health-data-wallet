@@ -83,9 +83,10 @@ class AuthAuthenticated extends AuthState {
   final String? walletAddress;
   final String? name;
   final String? email;
-  const AuthAuthenticated(this.role, this.did, {this.walletAddress, this.name, this.email});
+  final String? photoUrl;
+  const AuthAuthenticated(this.role, this.did, {this.walletAddress, this.name, this.email, this.photoUrl});
   @override
-  List<Object?> get props => [role, did, walletAddress, name, email];
+  List<Object?> get props => [role, did, walletAddress, name, email, photoUrl];
 }
 
 class AuthError extends AuthState {
@@ -126,7 +127,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await _api.storage.saveToken(token);
       final role = identity.role == 'researcher' ? UserRole.researcher : UserRole.patient;
       emit(AuthAuthenticated(role, identity.did,
-          name: account.name, email: account.email));
+          name: account.name, email: account.email, photoUrl: account.photoUrl));
     } catch (e) {
       emit(AuthInitial());
     }
@@ -173,13 +174,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         await _api.storage.saveSession(
           did: did, token: token, role: event.role.name,
           name: google.displayName, email: google.email,
+          photoUrl: google.photoUrl,
           organisation: event.organisation,
           avatarColor: _pickColor(did),
         );
         debugPrint('[GoogleSignIn] Session saved, DID=$did');
         emit(AuthAuthenticated(event.role, did,
             walletAddress: data['walletAddress'] as String?,
-            name: google.displayName, email: google.email));
+            name: google.displayName, email: google.email,
+            photoUrl: google.photoUrl));
       }
     } catch (e, stack) {
       debugPrint('[GoogleSignIn] ERROR: $e');
@@ -252,7 +255,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       _api.setAuthToken(token);
       await _api.storage.saveToken(token);
       emit(AuthAuthenticated(event.role, event.did,
-          name: account.name, email: account.email));
+          name: account.name, email: account.email, photoUrl: account.photoUrl));
     } catch (e) {
       emit(AuthError('Login failed: $e'));
     }

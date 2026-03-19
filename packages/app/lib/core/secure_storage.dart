@@ -8,6 +8,7 @@ class SavedAccount {
   final String? organisation;
   final String? name;
   final String? email;
+  final String? photoUrl;
   final int avatarColor; // stored as ARGB int
 
   const SavedAccount({
@@ -16,6 +17,7 @@ class SavedAccount {
     this.organisation,
     this.name,
     this.email,
+    this.photoUrl,
     this.avatarColor = 0xFF1A73E8,
   });
 
@@ -44,6 +46,7 @@ class SavedAccount {
         if (organisation != null) 'organisation': organisation,
         if (name != null) 'name': name,
         if (email != null) 'email': email,
+        if (photoUrl != null) 'photoUrl': photoUrl,
         'avatarColor': avatarColor,
       };
 
@@ -53,6 +56,7 @@ class SavedAccount {
         organisation: j['organisation'] as String?,
         name: j['name'] as String?,
         email: j['email'] as String?,
+        photoUrl: j['photoUrl'] as String?,
         avatarColor: (j['avatarColor'] as int?) ?? 0xFF1A73E8,
       );
 }
@@ -122,6 +126,7 @@ class SecureStorageService {
     String? organisation,
     String? name,
     String? email,
+    String? photoUrl,
     int avatarColor = 0xFF1A73E8,
   }) async {
     await saveAccount(SavedAccount(
@@ -129,6 +134,7 @@ class SecureStorageService {
       organisation: organisation,
       name: name,
       email: email,
+      photoUrl: photoUrl,
       avatarColor: avatarColor,
     ));
     await saveToken(token);

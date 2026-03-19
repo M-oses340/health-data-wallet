@@ -62,16 +62,32 @@ class _PatientShellState extends State<PatientShell> {
                                   shape: BoxShape.circle,
                                   color: scheme.onPrimary.withValues(alpha: 0.2),
                                 ),
-                                child: Center(
-                                  child: Text(
-                                    _initials(auth.name),
-                                    style: TextStyle(
-                                      color: scheme.onPrimary,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
+                                child: auth.photoUrl != null
+                                    ? ClipOval(
+                                        child: Image.network(
+                                          auth.photoUrl!,
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Center(
+                                            child: Text(_initials(auth.name),
+                                                style: TextStyle(
+                                                    color: scheme.onPrimary,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16)),
+                                          ),
+                                        ),
+                                      )
+                                    : Center(
+                                        child: Text(
+                                          _initials(auth.name),
+                                          style: TextStyle(
+                                            color: scheme.onPrimary,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(

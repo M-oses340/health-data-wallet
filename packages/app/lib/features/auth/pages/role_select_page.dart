@@ -298,16 +298,32 @@ class _AccountTile extends StatelessWidget {
                       shape: BoxShape.circle,
                       color: Color(account.avatarColor).withValues(alpha: 0.2),
                     ),
-                    child: Center(
-                      child: Text(
-                        account.initials,
-                        style: TextStyle(
-                          color: Color(account.avatarColor),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
+                    child: account.photoUrl != null
+                        ? ClipOval(
+                            child: Image.network(
+                              account.photoUrl!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Center(
+                                child: Text(account.initials,
+                                    style: TextStyle(
+                                        color: Color(account.avatarColor),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15)),
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              account.initials,
+                              style: TextStyle(
+                                color: Color(account.avatarColor),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
