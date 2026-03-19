@@ -37,9 +37,10 @@ class GoogleSignInEvent extends AuthEvent {
 class RegisterPatient extends AuthEvent {
   final String name;
   final String email;
-  const RegisterPatient({required this.name, required this.email});
+  final String? localPhotoPath;
+  const RegisterPatient({required this.name, required this.email, this.localPhotoPath});
   @override
-  List<Object?> get props => [name, email];
+  List<Object?> get props => [name, email, localPhotoPath];
 }
 
 /// Register a brand-new researcher account.
@@ -47,9 +48,10 @@ class RegisterResearcher extends AuthEvent {
   final String name;
   final String email;
   final String? organisation;
-  const RegisterResearcher({required this.name, required this.email, this.organisation});
+  final String? localPhotoPath;
+  const RegisterResearcher({required this.name, required this.email, this.organisation, this.localPhotoPath});
   @override
-  List<Object?> get props => [name, email, organisation];
+  List<Object?> get props => [name, email, organisation, localPhotoPath];
 }
 
 /// Login with an existing DID.
@@ -202,11 +204,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         did: did, token: token, role: 'patient',
         name: event.name,
         email: event.email,
+        photoUrl: event.localPhotoPath,
         avatarColor: _pickColor(did),
       );
       emit(AuthAuthenticated(UserRole.patient, did,
           walletAddress: data['walletAddress'] as String?,
-          name: event.name, email: event.email));
+          name: event.name, email: event.email,
+          photoUrl: event.localPhotoPath));
     } catch (e) {
       emit(AuthError('Registration failed: $e'));
     }
@@ -224,11 +228,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         organisation: event.organisation,
         name: event.name,
         email: event.email,
+        photoUrl: event.localPhotoPath,
         avatarColor: _pickColor(did),
       );
       emit(AuthAuthenticated(UserRole.researcher, did,
           walletAddress: data['walletAddress'] as String?,
-          name: event.name, email: event.email));
+          name: event.name, email: event.email,
+          photoUrl: event.localPhotoPath));
     } catch (e) {
       emit(AuthError('Registration failed: $e'));
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:io';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/patient_bloc.dart';
 import '../../../core/api_client.dart';
@@ -64,19 +65,33 @@ class _PatientShellState extends State<PatientShell> {
                                 ),
                                 child: auth.photoUrl != null
                                     ? ClipOval(
-                                        child: Image.network(
-                                          auth.photoUrl!,
-                                          width: 44,
-                                          height: 44,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Center(
-                                            child: Text(_initials(auth.name),
-                                                style: TextStyle(
-                                                    color: scheme.onPrimary,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16)),
-                                          ),
-                                        ),
+                                        child: _isLocalPath(auth.photoUrl!)
+                                            ? Image.file(
+                                                File(auth.photoUrl!),
+                                                width: 44,
+                                                height: 44,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => Center(
+                                                  child: Text(_initials(auth.name),
+                                                      style: TextStyle(
+                                                          color: scheme.onPrimary,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 16)),
+                                                ),
+                                              )
+                                            : Image.network(
+                                                auth.photoUrl!,
+                                                width: 44,
+                                                height: 44,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => Center(
+                                                  child: Text(_initials(auth.name),
+                                                      style: TextStyle(
+                                                          color: scheme.onPrimary,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 16)),
+                                                ),
+                                              ),
                                       )
                                     : Center(
                                         child: Text(
@@ -211,4 +226,6 @@ class _PatientShellState extends State<PatientShell> {
     if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     return name[0].toUpperCase();
   }
+
+  bool _isLocalPath(String url) => url.startsWith('/') || url.startsWith('file://');
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import '../../../core/api_client.dart';
 import '../../../core/secure_storage.dart';
 import '../bloc/auth_bloc.dart';
@@ -20,6 +22,7 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
   bool _showRegister = false;
   List<SavedAccount> _accounts = [];
   bool _loading = true;
+  File? _pickedPhoto;
 
   @override
   void initState() {
@@ -58,9 +61,22 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
             organisation: _orgController.text.trim().isEmpty
                 ? null
                 : _orgController.text.trim(),
+            localPhotoPath: _pickedPhoto?.path,
           ));
     } else {
-      context.read<AuthBloc>().add(RegisterPatient(name: name, email: email));
+      context.read<AuthBloc>().add(RegisterPatient(
+            name: name,
+            email: email,
+            localPhotoPath: _pickedPhoto?.path,
+          ));
+    }
+  }
+
+  Future<void> _pickPhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked != null && mounted) {
+      setState(() => _pickedPhoto = File(picked.path));
     }
   }
 
@@ -147,6 +163,8 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
                         onRegister: _register,
                         canCancel: hasAccounts,
                         onCancel: () => setState(() => _showRegister = false),
+                        pickedPhoto: _pickedPhoto,
+                        onPickPhoto: _pickPhoto,
                       ),
 
                     // Error banner
@@ -300,19 +318,33 @@ class _AccountTile extends StatelessWidget {
                     ),
                     child: account.photoUrl != null
                         ? ClipOval(
-                            child: Image.network(
-                              account.photoUrl!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Center(
-                                child: Text(account.initials,
-                                    style: TextStyle(
-                                        color: Color(account.avatarColor),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15)),
-                              ),
-                            ),
+                            child: account.photoUrl!.startsWith('/') || account.photoUrl!.startsWith('file://')
+                                ? Image.file(
+                                    File(account.photoUrl!),
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Center(
+                                      child: Text(account.initials,
+                                          style: TextStyle(
+                                              color: Color(account.avatarColor),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15)),
+                                    ),
+                                  )
+                                : Image.network(
+                                    account.photoUrl!,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Center(
+                                      child: Text(account.initials,
+                                          style: TextStyle(
+                                              color: Color(account.avatarColor),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15)),
+                                    ),
+                                  ),
                           )
                         : Center(
                             child: Text(
@@ -400,6 +432,8 @@ class _RegisterCard extends StatelessWidget {
   final VoidCallback onRegister;
   final bool canCancel;
   final VoidCallback onCancel;
+  final File? pickedPhoto;
+  final VoidCallback onPickPhoto;
 
   const _RegisterCard({
     required this.formKey,
@@ -411,6 +445,8 @@ class _RegisterCard extends StatelessWidget {
     required this.onRegister,
     required this.canCancel,
     required this.onCancel,
+    required this.pickedPhoto,
+    required this.onPickPhoto,
   });
 
   @override
@@ -433,6 +469,41 @@ class _RegisterCard extends StatelessWidget {
                     .textTheme
                     .titleMedium
                     ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+              // Avatar picker
+              Center(
+                child: GestureDetector(
+                  onTap: onPickPhoto,
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundColor: scheme.primary.withValues(alpha: 0.15),
+                        backgroundImage: pickedPhoto != null
+                            ? FileImage(pickedPhoto!) as ImageProvider
+                            : null,
+                        child: pickedPhoto == null
+                            ? Icon(Icons.person_outline,
+                                size: 36, color: scheme.primary)
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: scheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.camera_alt,
+                              size: 14, color: scheme.onPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               TextFormField(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:io';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/researcher_bloc.dart';
 import '../../../core/api_client.dart';
@@ -55,11 +56,48 @@ class _ResearcherShellState extends State<ResearcherShell> {
                             height: 44,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: scheme.onSecondary
-                                  .withValues(alpha: 0.2),
+                              color: scheme.onSecondary.withValues(alpha: 0.2),
                             ),
-                            child: Icon(Icons.science,
-                                color: scheme.onSecondary, size: 24),
+                            child: auth.photoUrl != null
+                                ? ClipOval(
+                                    child: _isLocalPath(auth.photoUrl!)
+                                        ? Image.file(
+                                            File(auth.photoUrl!),
+                                            width: 44,
+                                            height: 44,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Center(
+                                              child: Text(_initials(auth.name),
+                                                  style: TextStyle(
+                                                      color: scheme.onSecondary,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 16)),
+                                            ),
+                                          )
+                                        : Image.network(
+                                            auth.photoUrl!,
+                                            width: 44,
+                                            height: 44,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Center(
+                                              child: Text(_initials(auth.name),
+                                                  style: TextStyle(
+                                                      color: scheme.onSecondary,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 16)),
+                                            ),
+                                          ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      _initials(auth.name),
+                                      style: TextStyle(
+                                        color: scheme.onSecondary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -67,7 +105,10 @@ class _ResearcherShellState extends State<ResearcherShell> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Researcher',
+                                Text(
+                                    auth.name?.isNotEmpty == true
+                                        ? auth.name!
+                                        : 'Researcher',
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
@@ -154,4 +195,13 @@ class _ResearcherShellState extends State<ResearcherShell> {
     if (addr.length <= 16) return addr;
     return '${addr.substring(0, 8)}…${addr.substring(addr.length - 6)}';
   }
+
+  String _initials(String? name) {
+    if (name == null || name.isEmpty) return 'R';
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return name[0].toUpperCase();
+  }
+
+  bool _isLocalPath(String url) => url.startsWith('/') || url.startsWith('file://');
 }
