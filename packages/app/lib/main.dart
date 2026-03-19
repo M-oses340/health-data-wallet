@@ -16,8 +16,12 @@ void main() {
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (ctx) => AuthBloc(ctx.read<ApiClient>())
-              ..add(RestoreSession()),
+            create: (ctx) {
+              final api = ctx.read<ApiClient>();
+              final bloc = AuthBloc(api)..add(RestoreSession());
+              api.onSessionExpired = () => bloc.add(SignOut());
+              return bloc;
+            },
           ),
           BlocProvider(
             create: (ctx) => PatientBloc(ctx.read<ApiClient>()),

@@ -148,7 +148,7 @@ app.post('/auth/register', (_req, res) => {
   }
 });
 
-app.post('/auth/register/researcher', (req, res) => {
+app.post('/auth/register/researcher', authLimiter, (req, res) => {
   try {
     const { organisation } = req.body as { organisation?: string };
     const keyPair = walletService.generateKeyPair();
@@ -167,7 +167,7 @@ app.post('/auth/register/researcher', (req, res) => {
   }
 });
 
-app.post('/auth/login', (req, res) => {
+app.post('/auth/login', authLimiter, (req, res) => {
   const { did, role } = req.body as { did: string; role: string };
   if (!did || !role) { res.status(400).json({ error: 'did and role required' }); return; }
   if (role === 'researcher') {

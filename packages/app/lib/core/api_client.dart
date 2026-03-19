@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'env.dart';
 import 'secure_storage.dart';
 
@@ -11,6 +12,8 @@ class ApiClient {
   final SecureStorageService storage = SecureStorageService();
   String? _authToken;
   bool _refreshing = false;
+  /// Called when token refresh fails — wire up to AuthBloc.add(SignOut())
+  VoidCallback? onSessionExpired;
 
   ApiClient() : _dio = Dio(BaseOptions(
       baseUrl: Env.apiUrl,
@@ -38,7 +41,10 @@ class ApiClient {
             final retried = await _dio.fetch(opts);
             return handler.resolve(retried);
           } catch (_) {
-            // Refresh failed — let the error propagate so AuthBloc can sign out
+            // Refresh failed — clear token so the app redirects to login
+            clearAuthToken();
+            await storage.clearToken();
+            onSessionExpired?.call();
           } finally {
             _refreshing = false;
           }

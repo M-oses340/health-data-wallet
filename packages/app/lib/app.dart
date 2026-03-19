@@ -6,6 +6,8 @@ import 'features/auth/pages/role_select_page.dart';
 import 'features/patient/pages/patient_shell.dart';
 import 'features/researcher/pages/researcher_shell.dart';
 
+const _kInactivityTimeout = Duration(minutes: 5);
+
 class HealthDataApp extends StatefulWidget {
   const HealthDataApp({super.key});
 
@@ -13,8 +15,37 @@ class HealthDataApp extends StatefulWidget {
   State<HealthDataApp> createState() => _HealthDataAppState();
 }
 
-class _HealthDataAppState extends State<HealthDataApp> {
+class _HealthDataAppState extends State<HealthDataApp>
+    with WidgetsBindingObserver {
   bool _biometricPassed = false;
+  DateTime? _backgroundedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _backgroundedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      final bg = _backgroundedAt;
+      if (bg != null &&
+          DateTime.now().difference(bg) >= _kInactivityTimeout &&
+          _biometricPassed) {
+        setState(() => _biometricPassed = false);
+      }
+      _backgroundedAt = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
