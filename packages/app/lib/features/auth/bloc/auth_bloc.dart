@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../core/api_client.dart';
 import '../../../core/secure_storage.dart';
+import '../../../core/google_auth_service.dart';
 
 // ---------------------------------------------------------------------------
 // Role
@@ -21,6 +23,15 @@ abstract class AuthEvent extends Equatable {
 
 /// Attempt to restore a previously saved session from secure storage.
 class RestoreSession extends AuthEvent {}
+
+/// Register or login via Google — email and name come from the Google account.
+class GoogleSignInEvent extends AuthEvent {
+  final UserRole role;
+  final String? organisation;
+  const GoogleSignInEvent({required this.role, this.organisation});
+  @override
+  List<Object?> get props => [role, organisation];
+}
 
 /// Register a brand-new patient account (generates DID + wallet on the API).
 class RegisterPatient extends AuthEvent {
@@ -90,9 +101,11 @@ class AuthError extends AuthState {
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final ApiClient _api;
+  final GoogleAuthService _googleAuth = GoogleAuthService();
 
   AuthBloc(this._api) : super(AuthInitial()) {
     on<RestoreSession>(_onRestoreSession);
+    on<GoogleSignInEvent>(_onGoogleSignIn);
     on<RegisterPatient>(_onRegister);
     on<RegisterResearcher>(_onRegisterResearcher);
     on<LoginWithDID>(_onLogin);
@@ -116,6 +129,62 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           name: account.name, email: account.email));
     } catch (e) {
       emit(AuthInitial());
+    }
+  }
+
+  Future<void> _onGoogleSignIn(GoogleSignInEvent event, Emitter<AuthState> emit) async {
+    emit(AuthLoading());
+    try {
+      debugPrint('[GoogleSignIn] Starting sign-in flow, role=${event.role.name}');
+      final google = await _googleAuth.signIn();
+      if (google == null) {
+        debugPrint('[GoogleSignIn] User cancelled');
+        emit(AuthInitial()); return;
+      }
+      debugPrint('[GoogleSignIn] Got Google account: email=${google.email}, name=${google.displayName}');
+
+      final accounts = await _api.storage.loadAccounts();
+      debugPrint('[GoogleSignIn] Saved accounts on device: ${accounts.map((a) => a.email).toList()}');
+      final existing = accounts.where((a) => a.email == google.email).toList();
+
+      if (existing.isNotEmpty) {
+        debugPrint('[GoogleSignIn] Existing account found, logging in DID=${existing.first.did}');
+        final account = existing.first;
+        final data = await _api.login(account.did, account.role);
+        debugPrint('[GoogleSignIn] Login response: $data');
+        final token = data['token'] as String;
+        _api.setAuthToken(token);
+        await _api.storage.saveToken(token);
+        final role = account.role == 'researcher' ? UserRole.researcher : UserRole.patient;
+        emit(AuthAuthenticated(role, account.did,
+            name: account.name, email: account.email));
+      } else {
+        debugPrint('[GoogleSignIn] New account, registering as ${event.role.name}');
+        final Map<String, dynamic> data;
+        if (event.role == UserRole.researcher) {
+          data = await _api.registerResearcher(organisation: event.organisation);
+        } else {
+          data = await _api.registerPatient();
+        }
+        debugPrint('[GoogleSignIn] Register response: $data');
+        final token = data['token'] as String;
+        final did = data['did'] as String;
+        _api.setAuthToken(token);
+        await _api.storage.saveSession(
+          did: did, token: token, role: event.role.name,
+          name: google.displayName, email: google.email,
+          organisation: event.organisation,
+          avatarColor: _pickColor(did),
+        );
+        debugPrint('[GoogleSignIn] Session saved, DID=$did');
+        emit(AuthAuthenticated(event.role, did,
+            walletAddress: data['walletAddress'] as String?,
+            name: google.displayName, email: google.email));
+      }
+    } catch (e, stack) {
+      debugPrint('[GoogleSignIn] ERROR: $e');
+      debugPrint('[GoogleSignIn] STACK: $stack');
+      emit(AuthError('Google sign-in failed: $e'));
     }
   }
 

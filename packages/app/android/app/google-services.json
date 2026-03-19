@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "450598984533",
+    "project_id": "health-data-wallet",
+    "storage_bucket": "health-data-wallet.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:450598984533:android:e8f3d14154783b1528eddc",
+        "android_client_info": {
+          "package_name": "com.healthdata.health_data_wallet"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "450598984533-7ggih5fujg5icm9k61cngbt6ej8lm0m6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.healthdata.health_data_wallet",
+            "certificate_hash": "acb1c958479fb1b114833eae3fdd75470cea2558"
+          }
+        },
+        {
+          "client_id": "450598984533-cv1bdnpdfn2k5b5cv3ffto0kgisfbn3u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATl2Qv6eT7ssvLqvD7o2zURvweHulqgZE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "450598984533-cv1bdnpdfn2k5b5cv3ffto0kgisfbn3u.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

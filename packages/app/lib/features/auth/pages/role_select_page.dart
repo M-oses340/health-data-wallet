@@ -503,6 +503,36 @@ class _RegisterCard extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 20),
+              // Google sign-in
+              OutlinedButton.icon(
+                onPressed: () => context.read<AuthBloc>().add(
+                      GoogleSignInEvent(
+                        role: selected,
+                        organisation: orgController.text.trim().isEmpty
+                            ? null
+                            : orgController.text.trim(),
+                      ),
+                    ),
+                icon: Image.asset(
+                  'assets/google_logo.png',
+                  width: 20,
+                  height: 20,
+                ),
+                label: const Text('Continue with Google'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const Row(children: [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('or'),
+                ),
+                Expanded(child: Divider()),
+              ]),
               BlocBuilder<AuthBloc, AuthState>(
                 builder: (context, state) {
                   final loading = state is AuthLoading;
