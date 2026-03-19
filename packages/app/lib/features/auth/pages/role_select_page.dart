@@ -315,18 +315,11 @@ class _AccountTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          account.displayName,
+                          account.email ?? (isResearcher ? 'Researcher' : 'Patient'),
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
                               ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          account.email ?? (isResearcher ? 'Researcher' : 'Patient'),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ],
                     ),
