@@ -210,6 +210,10 @@ class _TimelineEntry extends StatelessWidget {
         return const _EventConfig(Icons.security, Colors.orange);
       case 'DATA_ACCESSED':
         return const _EventConfig(Icons.visibility_outlined, Colors.purple);
+      case 'COMPUTATION_COMPLETED':
+        return const _EventConfig(Icons.memory, Colors.teal);
+      case 'DATA_UPLOADED':
+        return const _EventConfig(Icons.cloud_upload_outlined, Colors.indigo);
       default:
         return const _EventConfig(Icons.info_outline, Colors.grey);
     }

@@ -31,8 +31,14 @@ class _ResearcherShellState extends State<ResearcherShell> {
     return BlocProvider(
       create: (ctx) =>
           ResearcherBloc(ctx.read<ApiClient>())..add(const SearchDatasets()),
-      child: Scaffold(
-        body: NestedScrollView(
+      child: BlocListener<ResearcherBloc, ResearcherState>(
+        listener: (ctx, state) {
+          if (state is DatasetSelected) {
+            setState(() => _tab = 1); // switch to New Request tab
+          }
+        },
+        child: Scaffold(
+          body: NestedScrollView(
           headerSliverBuilder: (ctx, _) => [
             SliverAppBar(
               expandedHeight: 120,
@@ -170,25 +176,26 @@ class _ResearcherShellState extends State<ResearcherShell> {
               children: const [MarketplacePage(), SubmitRequestPage()],
             ),
           ),
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search),
-              label: 'Datasets',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.add_circle_outline),
-              selectedIcon: Icon(Icons.add_circle),
-              label: 'New Request',
-            ),
-          ],
-        ),
-      ),
-    );
+        ), // NestedScrollView
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _tab,
+            onDestinationSelected: (i) => setState(() => _tab = i),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.search_outlined),
+                selectedIcon: Icon(Icons.search),
+                label: 'Datasets',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.add_circle_outline),
+                selectedIcon: Icon(Icons.add_circle),
+                label: 'New Request',
+              ),
+            ],
+          ),
+        ), // Scaffold
+      ), // BlocListener
+    ); // BlocProvider
   }
 
   String _shortAddr(String addr) {

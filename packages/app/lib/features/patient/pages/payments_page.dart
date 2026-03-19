@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/patient_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
+import '../../../core/api_client.dart';
 
 class PaymentsPage extends StatelessWidget {
   const PaymentsPage({super.key});
@@ -67,8 +68,9 @@ class PaymentsPage extends StatelessWidget {
               sliver: SliverList.separated(
                 itemCount: payments.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (_, i) =>
-                    _PaymentCard(payment: payments[i] as Map<String, dynamic>),
+                itemBuilder: (_, i) => _PaymentCard(
+                    payment: payments[i] as Map<String, dynamic>,
+                    patientDid: auth.did),
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -145,19 +147,89 @@ class PaymentsPage extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Payment card with copy-to-clipboard
+// Payment card with copy-to-clipboard and consent revoke
 // ---------------------------------------------------------------------------
 
-class _PaymentCard extends StatelessWidget {
+class _PaymentCard extends StatefulWidget {
   final Map<String, dynamic> payment;
-  const _PaymentCard({required this.payment});
+  final String patientDid;
+  const _PaymentCard({required this.payment, required this.patientDid});
+
+  @override
+  State<_PaymentCard> createState() => _PaymentCardState();
+}
+
+class _PaymentCardState extends State<_PaymentCard> {
+  bool _revoking = false;
+
+  Future<void> _revoke(BuildContext context) async {
+    final contractId = widget.payment['contractId']?.toString();
+    if (contractId == null) return;
+
+    // Capture blocs before any await
+    final apiClient = context.read<ApiClient>();
+    final messenger = ScaffoldMessenger.of(context);
+    final patientBloc = context.read<PatientBloc>();
+    final authBloc = context.read<AuthBloc>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revoke consent?'),
+        content: const Text(
+            'This will revoke the researcher\'s access to your data for this contract.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _revoking = true);
+    try {
+      await apiClient.revokeConsent(
+        contractId: contractId,
+        patientDID: widget.patientDid,
+      );
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Consent revoked'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        final authState = authBloc.state;
+        if (authState is AuthAuthenticated) {
+          patientBloc.add(LoadPatientData(authState.did));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Failed to revoke: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _revoking = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final amount = payment['amount']?.toString() ?? '—';
-    final contractId = payment['contractId']?.toString() ?? '—';
-    final ts = payment['timestamp'];
+    final amount = widget.payment['amount']?.toString() ?? '—';
+    final contractId = widget.payment['contractId']?.toString() ?? '—';
+    final ts = widget.payment['timestamp'];
     final dateStr = ts != null
         ? DateTime.fromMillisecondsSinceEpoch((ts as int) * 1000)
             .toLocal()
@@ -175,62 +247,93 @@ class _PaymentCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.green.withValues(alpha: 0.12),
-              ),
-              child: const Icon(Icons.arrow_downward,
-                  color: Colors.green, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('$amount ETH',
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.green.withValues(alpha: 0.12),
+                  ),
+                  child: const Icon(Icons.arrow_downward,
+                      color: Colors.green, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$amount ETH',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green.shade700,
                               )),
-                  const SizedBox(height: 2),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: contractId));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Contract ID copied'),
-                          duration: Duration(seconds: 2),
+                      const SizedBox(height: 2),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: contractId));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Contract ID copied'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(shortId,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color: scheme.onSurfaceVariant)),
+                            const SizedBox(width: 4),
+                            Icon(Icons.copy,
+                                size: 12, color: scheme.onSurfaceVariant),
+                          ],
                         ),
-                      );
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(shortId,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                    color: scheme.onSurfaceVariant)),
-                        const SizedBox(width: 4),
-                        Icon(Icons.copy,
-                            size: 12, color: scheme.onSurfaceVariant),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Text(dateStr,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        )),
+              ],
             ),
-            Text(dateStr,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    )),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _revoking
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: () => _revoke(context),
+                      icon: const Icon(Icons.block, size: 16),
+                      label: const Text('Revoke consent'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),

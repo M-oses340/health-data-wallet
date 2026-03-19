@@ -24,6 +24,17 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
     _dividendCtrl.addListener(() => setState(() {}));
   }
 
+  void _prefillFromDataset(Map<String, dynamic> dataset) {
+    final category = dataset['category']?.toString() ?? '';
+    final dataType = dataset['dataType']?.toString() ?? '';
+    _categoryCtrl.text = category;
+    _scopeCtrl.text = category.isNotEmpty ? '$category-research' : '';
+    if (['EHR', 'WEARABLE', 'GENETIC'].contains(dataType)) {
+      // keep method as-is; user can change
+    }
+    setState(() {});
+  }
+
   @override
   void dispose() {
     _categoryCtrl.dispose();
@@ -75,9 +86,14 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
           );
         }
       },
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
+      child: BlocListener<ResearcherBloc, ResearcherState>(
+        listenWhen: (_, state) => state is DatasetSelected,
+        listener: (context, state) {
+          if (state is DatasetSelected) _prefillFromDataset(state.dataset);
+        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -193,8 +209,9 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
             ],
           ),
         ),
-      ),
-    );
+        ), // SingleChildScrollView
+      ), // DatasetSelected BlocListener
+    ); // RequestSubmitted BlocListener
   }
 
   Widget _sectionLabel(BuildContext context, String label) {

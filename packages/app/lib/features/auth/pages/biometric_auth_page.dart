@@ -95,7 +95,7 @@ class _BiometricAuthPageState extends State<BiometricAuthPage>
         authenticated = await _auth.authenticate(
           localizedReason: 'Authenticate to access your Health Data Wallet',
           authMessages: [
-            AndroidAuthMessages(
+            const AndroidAuthMessages(
               signInTitle: 'Health Data Wallet',
               signInHint: 'Touch the fingerprint sensor',
               cancelButton: 'Cancel',

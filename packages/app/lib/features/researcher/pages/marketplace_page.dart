@@ -122,7 +122,11 @@ class _MarketplacePageState extends State<MarketplacePage> {
                   itemCount: state.datasets.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (_, i) => _DatasetCard(
-                      dataset: state.datasets[i] as Map<String, dynamic>),
+                      dataset: state.datasets[i] as Map<String, dynamic>,
+                      onUse: () {
+                        context.read<ResearcherBloc>().add(
+                            SelectDataset(state.datasets[i] as Map<String, dynamic>));
+                      }),
                 );
               }
               return _SearchPrompt();
@@ -176,7 +180,8 @@ class _TypeChip extends StatelessWidget {
 
 class _DatasetCard extends StatelessWidget {
   final Map<String, dynamic> dataset;
-  const _DatasetCard({required this.dataset});
+  final VoidCallback onUse;
+  const _DatasetCard({required this.dataset, required this.onUse});
 
   @override
   Widget build(BuildContext context) {
@@ -253,6 +258,22 @@ class _DatasetCard extends StatelessWidget {
                     .toList(),
               ),
             ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: onUse,
+                icon: const Icon(Icons.send_outlined, size: 16),
+                label: const Text('Use dataset'),
+                style: FilledButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
           ],
         ),
       ),

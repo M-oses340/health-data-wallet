@@ -1,7 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:health_data_wallet/core/api_client.dart';
 import 'package:health_data_wallet/features/auth/bloc/auth_bloc.dart';
 import '../mocks/mock_api_client.dart';
 
@@ -32,7 +31,7 @@ void main() {
         when(() => api.setAuthToken(any())).thenReturn(null);
         return AuthBloc(api);
       },
-      act: (bloc) => bloc.add(RegisterPatient()),
+      act: (bloc) => bloc.add(const RegisterPatient(name: 'Test User', email: 'test@example.com')),
       expect: () => [
         AuthLoading(),
         const AuthAuthenticated(UserRole.patient, did, walletAddress: wallet),
@@ -49,7 +48,7 @@ void main() {
             .thenThrow(Exception('network error'));
         return AuthBloc(api);
       },
-      act: (bloc) => bloc.add(RegisterPatient()),
+      act: (bloc) => bloc.add(const RegisterPatient(name: 'Test User', email: 'test@example.com')),
       expect: () => [
         AuthLoading(),
         isA<AuthError>(),
@@ -78,7 +77,7 @@ void main() {
         return AuthBloc(api);
       },
       act: (bloc) =>
-          bloc.add(const RegisterResearcher(organisation: 'BioLab')),
+          bloc.add(const RegisterResearcher(name: 'Dr Test', email: 'dr@example.com', organisation: 'BioLab')),
       expect: () => [
         AuthLoading(),
         const AuthAuthenticated(UserRole.researcher, did,

@@ -27,6 +27,13 @@ class SubmitRequest extends ResearcherEvent {
   List<Object?> get props => [payload];
 }
 
+class SelectDataset extends ResearcherEvent {
+  final Map<String, dynamic> dataset;
+  const SelectDataset(this.dataset);
+  @override
+  List<Object?> get props => [dataset];
+}
+
 // ---------------------------------------------------------------------------
 // States
 // ---------------------------------------------------------------------------
@@ -54,6 +61,13 @@ class RequestSubmitted extends ResearcherState {
   List<Object?> get props => [contractId];
 }
 
+class DatasetSelected extends ResearcherState {
+  final Map<String, dynamic> dataset;
+  const DatasetSelected(this.dataset);
+  @override
+  List<Object?> get props => [dataset];
+}
+
 class ResearcherError extends ResearcherState {
   final String message;
   const ResearcherError(this.message);
@@ -71,6 +85,7 @@ class ResearcherBloc extends Bloc<ResearcherEvent, ResearcherState> {
   ResearcherBloc(this._api) : super(ResearcherInitial()) {
     on<SearchDatasets>(_onSearch);
     on<SubmitRequest>(_onSubmit);
+    on<SelectDataset>(_onSelectDataset);
   }
 
   Future<void> _onSearch(SearchDatasets event, Emitter<ResearcherState> emit) async {
@@ -94,5 +109,9 @@ class ResearcherBloc extends Bloc<ResearcherEvent, ResearcherState> {
     } catch (e) {
       emit(ResearcherError(e.toString()));
     }
+  }
+
+  Future<void> _onSelectDataset(SelectDataset event, Emitter<ResearcherState> emit) async {
+    emit(DatasetSelected(event.dataset));
   }
 }
