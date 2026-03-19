@@ -293,10 +293,11 @@ app.post('/marketplace/requests', requireAuth, requireRole('researcher'), (req, 
 
 // Trigger computation for an already-accepted contract (requires active on-chain consent).
 app.post('/computation/run', requireAuth, requireRole('researcher'), async (req, res) => {
-  const { contractId } = req.body as { contractId?: string };
-  if (!contractId) { res.status(400).json({ error: 'contractId required' }); return; }
+  const { contractId, patientDID } = req.body as { contractId?: string; patientDID?: string };
+  if (!contractId || !patientDID) { res.status(400).json({ error: 'contractId and patientDID required' }); return; }
   try {
-    const job = await computationEngine.initiateComputation(contractId);
+    const result = await orchestrator.runComputation(contractId, patientDID);
+    const job = computationEngine.getJob(result.jobId);
     res.status(201).json({ job });
   } catch (e: unknown) {
     const msg = (e as Error).message;
