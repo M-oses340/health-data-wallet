@@ -320,6 +320,8 @@ class _AccountTile extends StatelessWidget {
                               .textTheme
                               .bodyMedium
                               ?.copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
                         ),
                       ],
                     ),
