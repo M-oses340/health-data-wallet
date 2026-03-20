@@ -122,6 +122,22 @@ class ApiClient {
     return res.data as Map<String, dynamic>;
   }
 
+  Future<List<dynamic>> getActiveContracts() async {
+    final res = await _dio.get('/computation/active');
+    return res.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> runComputation({
+    required String contractId,
+    required String patientDID,
+  }) async {
+    final res = await _dio.post('/computation/run', data: {
+      'contractId': contractId,
+      'patientDID': patientDID,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
   // -------------------------------------------------------------------------
   // Vault endpoints
   // -------------------------------------------------------------------------
@@ -149,6 +165,34 @@ class ApiClient {
   // -------------------------------------------------------------------------
   // Consent endpoints
   // -------------------------------------------------------------------------
+
+  Future<List<dynamic>> getPendingConsents() async {
+    final res = await _dio.get('/consent/pending');
+    return res.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> grantConsent({
+    required String patientDID,
+    required String contractId,
+    required String researcherDID,
+    required String dataCategory,
+    required String computationMethod,
+    required String permittedScope,
+    required int accessDurationSeconds,
+    required String dataDividendWei,
+  }) async {
+    final res = await _dio.post('/consent/grant', data: {
+      'patientDID': patientDID,
+      'contractId': contractId,
+      'researcherDID': researcherDID,
+      'dataCategory': dataCategory,
+      'computationMethod': computationMethod,
+      'permittedScope': permittedScope,
+      'accessDurationSeconds': accessDurationSeconds,
+      'dataDividendWei': dataDividendWei,
+    });
+    return res.data as Map<String, dynamic>;
+  }
 
   Future<Map<String, dynamic>> revokeConsent({
     required String contractId,

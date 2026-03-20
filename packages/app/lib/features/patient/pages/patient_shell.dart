@@ -8,6 +8,7 @@ import '../../../core/api_client.dart';
 import 'payments_page.dart';
 import 'audit_trail_page.dart';
 import 'upload_data_page.dart';
+import 'consents_page.dart';
 
 class PatientShell extends StatefulWidget {
   const PatientShell({super.key});
@@ -40,7 +41,6 @@ class _PatientShellState extends State<PatientShell> {
             body: NestedScrollView(
               headerSliverBuilder: (ctx, _) => [
                 SliverAppBar(
-                  title: Text(auth.name?.isNotEmpty == true ? auth.name! : 'Patient Wallet'),
                   expandedHeight: 120,
                   pinned: true,
                   flexibleSpace: FlexibleSpaceBar(
@@ -186,7 +186,7 @@ class _PatientShellState extends State<PatientShell> {
                 child: IndexedStack(
                   key: ValueKey(_tab),
                   index: _tab,
-                  children: const [PaymentsPage(), AuditTrailPage(), UploadDataPage()],
+                  children: const [PaymentsPage(), AuditTrailPage(), UploadDataPage(), ConsentsPage()],
                 ),
               ),
             ),
@@ -212,6 +212,11 @@ class _PatientShellState extends State<PatientShell> {
                   icon: Icon(Icons.cloud_upload_outlined),
                   selectedIcon: Icon(Icons.cloud_upload),
                   label: 'Upload',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.verified_user_outlined),
+                  selectedIcon: Icon(Icons.verified_user),
+                  label: 'Consents',
                 ),
               ],
             ),

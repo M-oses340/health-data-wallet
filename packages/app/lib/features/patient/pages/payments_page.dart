@@ -246,7 +246,7 @@ class _PaymentCardState extends State<_PaymentCard> {
     final ts = widget.payment['timestamp'];
     final dateStr = ts != null
         ? _dateFmt.format(
-            DateTime.fromMillisecondsSinceEpoch((ts as int) * 1000).toLocal())
+            DateTime.fromMillisecondsSinceEpoch(ts as int).toLocal())
         : '—';
 
     final shortId = contractId.length > 20

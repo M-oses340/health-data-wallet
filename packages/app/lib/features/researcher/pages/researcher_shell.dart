@@ -7,6 +7,7 @@ import '../bloc/researcher_bloc.dart';
 import '../../../core/api_client.dart';
 import 'marketplace_page.dart';
 import 'submit_request_page.dart';
+import 'active_contracts_page.dart';
 
 class ResearcherShell extends StatefulWidget {
   const ResearcherShell({super.key});
@@ -176,7 +177,7 @@ class _ResearcherShellState extends State<ResearcherShell> {
             child: IndexedStack(
               key: ValueKey(_tab),
               index: _tab,
-              children: const [MarketplacePage(), SubmitRequestPage()],
+              children: const [MarketplacePage(), SubmitRequestPage(), ActiveContractsPage()],
             ),
           ),
         ), // NestedScrollView
@@ -193,6 +194,11 @@ class _ResearcherShellState extends State<ResearcherShell> {
                 icon: Icon(Icons.add_circle_outline),
                 selectedIcon: Icon(Icons.add_circle),
                 label: 'New Request',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.science_outlined),
+                selectedIcon: Icon(Icons.science),
+                label: 'My Contracts',
               ),
             ],
           ),

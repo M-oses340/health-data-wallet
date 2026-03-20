@@ -34,6 +34,18 @@ class SelectDataset extends ResearcherEvent {
   List<Object?> get props => [dataset];
 }
 
+class LoadActiveContracts extends ResearcherEvent {
+  const LoadActiveContracts();
+}
+
+class RunComputation extends ResearcherEvent {
+  final String contractId;
+  final String patientDID;
+  const RunComputation({required this.contractId, required this.patientDID});
+  @override
+  List<Object?> get props => [contractId, patientDID];
+}
+
 // ---------------------------------------------------------------------------
 // States
 // ---------------------------------------------------------------------------
@@ -75,6 +87,20 @@ class ResearcherError extends ResearcherState {
   List<Object?> get props => [message];
 }
 
+class ActiveContractsLoaded extends ResearcherState {
+  final List<dynamic> contracts;
+  const ActiveContractsLoaded(this.contracts);
+  @override
+  List<Object?> get props => [contracts];
+}
+
+class ComputationStarted extends ResearcherState {
+  final Map<String, dynamic> job;
+  const ComputationStarted(this.job);
+  @override
+  List<Object?> get props => [job];
+}
+
 // ---------------------------------------------------------------------------
 // BLoC
 // ---------------------------------------------------------------------------
@@ -86,6 +112,8 @@ class ResearcherBloc extends Bloc<ResearcherEvent, ResearcherState> {
     on<SearchDatasets>(_onSearch);
     on<SubmitRequest>(_onSubmit);
     on<SelectDataset>(_onSelectDataset);
+    on<LoadActiveContracts>(_onLoadActive);
+    on<RunComputation>(_onRunComputation);
   }
 
   Future<void> _onSearch(SearchDatasets event, Emitter<ResearcherState> emit) async {
@@ -113,5 +141,28 @@ class ResearcherBloc extends Bloc<ResearcherEvent, ResearcherState> {
 
   Future<void> _onSelectDataset(SelectDataset event, Emitter<ResearcherState> emit) async {
     emit(DatasetSelected(event.dataset));
+  }
+
+  Future<void> _onLoadActive(LoadActiveContracts event, Emitter<ResearcherState> emit) async {
+    emit(ResearcherLoading());
+    try {
+      final contracts = await _api.getActiveContracts();
+      emit(ActiveContractsLoaded(contracts));
+    } catch (e) {
+      emit(ResearcherError(e.toString()));
+    }
+  }
+
+  Future<void> _onRunComputation(RunComputation event, Emitter<ResearcherState> emit) async {
+    emit(ResearcherLoading());
+    try {
+      final result = await _api.runComputation(
+        contractId: event.contractId,
+        patientDID: event.patientDID,
+      );
+      emit(ComputationStarted(result));
+    } catch (e) {
+      emit(ResearcherError(e.toString()));
+    }
   }
 }

@@ -14,16 +14,22 @@ class GoogleSignInResult {
 }
 
 class GoogleAuthService {
-  final _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  bool _initialized = false;
+
+  Future<void> _ensureInitialized() async {
+    if (_initialized) return;
+    await GoogleSignIn.instance.initialize();
+    _initialized = true;
+  }
 
   /// Opens the Google account picker and returns the selected account.
   /// Returns null if the user cancels.
   Future<GoogleSignInResult?> signIn() async {
     try {
+      await _ensureInitialized();
       // signOut first so the picker always shows — lets users switch accounts
-      await _googleSignIn.signOut();
-      final account = await _googleSignIn.signIn();
-      if (account == null) return null;
+      await GoogleSignIn.instance.signOut();
+      final account = await GoogleSignIn.instance.authenticate();
       return GoogleSignInResult(
         email: account.email,
         displayName: account.displayName ?? account.email.split('@').first,
