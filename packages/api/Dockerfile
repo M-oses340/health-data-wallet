@@ -1,12 +1,16 @@
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 
 # Install build tools for native modules (better-sqlite3)
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ cmake && rm -rf /var/lib/apt/lists/*
 
-# Copy monorepo root configs and pre-installed node_modules
+# Copy all package manifests so npm workspaces resolves correctly
 COPY package.json package-lock.json tsconfig.base.json ./
-COPY node_modules ./node_modules
+COPY packages/sdk/package.json ./packages/sdk/package.json
+COPY packages/api/package.json ./packages/api/package.json
+RUN npm ci
+
+# Copy source and build
 COPY packages/sdk ./packages/sdk
 COPY packages/api ./packages/api
 
@@ -16,11 +20,11 @@ RUN npm rebuild better-sqlite3
 RUN npm run build --workspace=packages/sdk
 RUN npm run build --workspace=packages/api
 
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
 
-# Runtime deps for better-sqlite3
-RUN apk add --no-cache libstdc++
+# wget needed for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 
 # Copy node_modules and compiled output from builder
 COPY --from=builder /app/node_modules ./node_modules

@@ -7,11 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 # Install anonymizer deps first (heavy — cached layer)
 COPY packages/anonymizer/requirements.txt ./anonymizer-requirements.txt
 RUN pip install --no-cache-dir --timeout 120 --retries 5 presidio-analyzer==2.2.354 presidio-anonymizer==2.2.354 spacy==3.7.4
-RUN pip install --no-cache-dir --timeout 120 --retries 5 https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1-py3-none-any.whl
+# Model wheel is pre-downloaded locally to avoid 587MB GitHub download on every build
+COPY packages/fl-server/en_core_web_lg-3.7.1-py3-none-any.whl ./
+RUN pip install --no-cache-dir ./en_core_web_lg-3.7.1-py3-none-any.whl && rm ./en_core_web_lg-3.7.1-py3-none-any.whl
 
-# Install FL server deps
+# Install FL server deps from pre-downloaded wheels (avoids slow PyPI downloads)
 COPY packages/fl-server/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --timeout 120 --retries 5 -r requirements.txt
+COPY packages/fl-server/wheels ./wheels
+RUN pip install --no-cache-dir --no-index --find-links=./wheels -r requirements.txt && rm -rf ./wheels
 
 # Copy source
 COPY packages/fl-server/src ./src

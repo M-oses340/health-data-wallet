@@ -1,17 +1,17 @@
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
 
-RUN apk add --no-cache curl python3 make g++ netcat-openbsd
+RUN apt-get update && apt-get install -y --no-install-recommends curl python3 make g++ netcat-openbsd && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json tsconfig.base.json ./
-COPY node_modules ./node_modules
+RUN npm ci
 COPY packages/sdk ./packages/sdk
 COPY packages/contracts ./packages/contracts
 
 # Reinstall stacktrace-parser to fix broken local copy
 RUN npm install stacktrace-parser --no-save
 
-# Pre-seed the hardhat compiler cache — wasm only (native solc won't run on Alpine/musl)
+# Pre-seed the hardhat compiler cache — wasm only
 RUN mkdir -p /root/.cache/hardhat-nodejs/compilers-v3/wasm
 COPY .hardhat-cache/compilers-v3/wasm/ /root/.cache/hardhat-nodejs/compilers-v3/wasm/
 

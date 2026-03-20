@@ -1,5 +1,5 @@
+node_modules
 **/node_modules
-!node_modules
 **/.dart_tool
 **/.flutter-plugins*
 # Only exclude dist for source packages, not node_modules internals
