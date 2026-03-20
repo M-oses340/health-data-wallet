@@ -47,5 +47,8 @@ app.*.map.json
 # Kiro IDE files
 .kiro/
 
+# Test files (local only)
+test/
+
 # Kiro specs
 .kiro/
