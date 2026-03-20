@@ -3,6 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
+    "types": ["node"],
+    "noEmitOnError": false,
     "paths": {
       "@health-data/sdk": ["../sdk/dist"]
     }

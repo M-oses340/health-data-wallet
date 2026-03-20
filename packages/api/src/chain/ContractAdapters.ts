@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import type { IConsentRegistry, IPaymentRouter } from '../computation/ComputationEngine';
 import type { IOnChainConsentManager, IOnChainPaymentRouter } from '../orchestrator/PlatformOrchestrator';
 import { ComputationRequest } from '@health-data/sdk';
+import { db } from '../db';
 
 // ---------------------------------------------------------------------------
 // Minimal ABIs — only the functions we call
@@ -88,8 +89,15 @@ export function buildChainAdapters(rpcUrl: string): {
 
     const consentRegistry: IConsentRegistry = {
       async isConsentActive(contractId: string) {
-        try { return await registry.isConsentActive(toBytes32(contractId)); }
-        catch { return true; } // fallback for unregistered contracts
+        try {
+          const onChain = await registry.isConsentActive(toBytes32(contractId));
+          if (onChain) return true;
+        } catch { /* ignore */ }
+        // Fall back to DB status — if patient granted consent in the app, trust it
+        const row = db.prepare(
+          `SELECT status FROM computation_requests WHERE contract_id = ?`
+        ).get(contractId) as { status: string } | undefined;
+        return row?.status === 'ACTIVE';
       },
       async getComputationMethod(contractId: string) {
         try { return Number(await registry.getComputationMethod(toBytes32(contractId))); }

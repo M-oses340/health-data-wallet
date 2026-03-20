@@ -17,6 +17,7 @@ import { MarketplaceService } from '../marketplace/MarketplaceService';
 import { ComputationEngine } from '../computation/ComputationEngine';
 import { AuditTrailService } from '../audit/AuditTrailService';
 import { DataType, ComputationRequest, DataDividendRecord } from '@health-data/sdk';
+import { db } from '../db';
 
 // ---------------------------------------------------------------------------
 // Supporting interfaces (thin adapters over on-chain contracts)
@@ -178,6 +179,8 @@ export class PlatformOrchestrator {
     await this.consentManager.createContract(contractId, profile.walletAddress, request);
     await this.consentManager.signContract(contractId, patientDID);
 
+    db.prepare(`UPDATE computation_requests SET status = 'ACTIVE' WHERE contract_id = ?`).run(contractId);
+
     this.auditTrail.writeEntry({ patientDID, eventType: 'CONSENT_GRANTED', contractId });
   }
 
@@ -191,11 +194,18 @@ export class PlatformOrchestrator {
       computationMethod: job.method,
     });
 
+    // Look up the dividend amount from the computation request
+    const row = db.prepare(
+      `SELECT data_dividend_wei FROM computation_requests WHERE contract_id = ?`
+    ).get(contractId) as { data_dividend_wei: string | null } | undefined;
+    const dividendWei = row?.data_dividend_wei ? BigInt(row.data_dividend_wei) : undefined;
+
     this.auditTrail.writeEntry({
       patientDID,
       eventType: 'DIVIDEND_PAID',
       contractId,
       computationMethod: job.method,
+      amount: dividendWei,
     });
 
     return {

@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { WalletService } from './wallet/WalletService';
 import { PatientProfileRepository } from './patient/PatientProfileRepository';
 import { ResearcherProfileRepository } from './researcher/ResearcherProfileRepository';
@@ -10,6 +11,7 @@ import { AuditTrailService } from './audit/AuditTrailService';
 import { PlatformOrchestrator } from './orchestrator/PlatformOrchestrator';
 import { buildChainAdapters } from './chain/ContractAdapters';
 import { DataType, ComputationMethod } from '@health-data/sdk';
+import { db } from './db';
 
 // ---------------------------------------------------------------------------
 // Service singletons
@@ -28,8 +30,8 @@ const { consentRegistry, consentManager, paymentRouter, onChainPaymentRouter } =
 // Vault data provider: each patient with vault records becomes one FL silo
 const vaultDataProvider: IVaultDataProvider = {
   async getAnonymizedRecordsForFL(_contractId: string) {
-    const { db } = await import('./db');
-    const rows = db.prepare('SELECT did FROM patient_profiles').all() as { did: string }[];
+    const dbModule = await import('./db');
+    const rows = dbModule.db.prepare('SELECT did FROM patient_profiles').all() as { did: string }[];
     const silos: Record<string, number>[][] = [];
     for (const { did } of rows) {
       const records = vaultService.getPlaintextRecords(did);
@@ -138,6 +140,14 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later.' },
+});
+
 app.post('/auth/register', (_req, res) => {
   try {
     const result = orchestrator.registerPatient();
@@ -190,13 +200,26 @@ app.post('/auth/refresh', requireAuth, (req, res) => {
 app.get('/patient/payments', requireAuth, (req, res) => {
   const did = req.query['did'] as string;
   if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
-  res.json({ payments: auditTrail.getAuditTrail(did).filter(e => e.eventType === 'DIVIDEND_PAID') });
+  const entries = auditTrail.getAuditTrail(did)
+    .filter(e => e.eventType === 'DIVIDEND_PAID')
+    .map(e => ({
+      ...e,
+      // Convert wei BigInt to ETH string for JSON serialization
+      amount: e.amount != null
+        ? (Number(e.amount) / 1e18).toFixed(6).replace(/\.?0+$/, '')
+        : undefined,
+    }));
+  res.json({ payments: entries });
 });
 
 app.get('/patient/audit-trail', requireAuth, (req, res) => {
   const did = req.query['did'] as string;
   if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
-  res.json({ entries: auditTrail.getAuditTrail(did) });
+  const entries = auditTrail.getAuditTrail(did).map(e => ({
+    ...e,
+    amount: e.amount != null ? e.amount.toString() : undefined,
+  }));
+  res.json({ entries });
 });
 
 app.get('/patient/profile', requireAuth, (req, res) => {
@@ -291,6 +314,28 @@ app.post('/marketplace/requests', requireAuth, requireRole('researcher'), (req, 
   res.status(201).json(submission);
 });
 
+// Researcher: list their ACTIVE contracts (patient has granted consent).
+app.get('/computation/active', requireAuth, requireRole('researcher'), (req, res) => {
+  const { did } = (req as any).jwtPayload as { did: string };
+  const rows = db.prepare(
+    `SELECT request_id, contract_id, researcher_did, data_category, computation_method,
+            permitted_scope, access_duration, data_dividend_wei, status, created_at
+     FROM computation_requests WHERE status = 'ACTIVE' AND researcher_did = ? ORDER BY created_at DESC`
+  ).all(did) as any[];
+  res.json(rows.map(r => ({
+    requestId: r.request_id,
+    contractId: r.contract_id,
+    researcherDID: r.researcher_did,
+    dataCategory: r.data_category,
+    computationMethod: r.computation_method,
+    permittedScope: r.permitted_scope,
+    accessDurationSeconds: r.access_duration,
+    dataDividendWei: r.data_dividend_wei,
+    status: r.status,
+    createdAt: r.created_at,
+  })));
+});
+
 // Trigger computation for an already-accepted contract (requires active on-chain consent).
 app.post('/computation/run', requireAuth, requireRole('researcher'), async (req, res) => {
   const { contractId, patientDID } = req.body as { contractId?: string; patientDID?: string };
@@ -308,6 +353,26 @@ app.post('/computation/run', requireAuth, requireRole('researcher'), async (req,
 
 // ── Consent ───────────────────────────────────────────────────────────────
 
+
+// List pending (ACCEPTED, not yet granted) computation requests — shown to patient.
+app.get('/consent/pending', requireAuth, (_req, res) => {
+  const rows = db.prepare(
+    `SELECT request_id, contract_id, researcher_did, data_category, computation_method,
+            permitted_scope, access_duration, data_dividend_wei, status, created_at
+     FROM computation_requests WHERE status = 'ACCEPTED' ORDER BY created_at DESC`
+  ).all() as any[];
+  res.json(rows.map(r => ({
+    requestId: r.request_id,
+    contractId: r.contract_id,
+    researcherDID: r.researcher_did,
+    dataCategory: r.data_category,
+    computationMethod: r.computation_method,
+    permittedScope: r.permitted_scope,
+    accessDurationSeconds: r.access_duration,
+    dataDividendWei: r.data_dividend_wei,
+    createdAt: r.created_at,
+  })));
+});
 // Patient grants consent for a researcher's accepted contract.
 // Creates + signs the on-chain consent record, making the contract ACTIVE
 // so the researcher can subsequently call POST /computation/run.
