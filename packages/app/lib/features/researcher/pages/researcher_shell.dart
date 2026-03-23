@@ -31,14 +31,19 @@ class _ResearcherShellState extends State<ResearcherShell> {
 
     return BlocProvider(
       create: (ctx) =>
-          ResearcherBloc(ctx.read<ApiClient>())..add(const SearchDatasets()),
+          ResearcherBloc(ctx.read<ApiClient>())
+            ..add(const SearchDatasets())
+            ..add(const LoadActiveContracts()),
       child: BlocListener<ResearcherBloc, ResearcherState>(
         listener: (ctx, state) {
           if (state is DatasetSelected) {
             setState(() => _tab = 1); // switch to New Request tab
           }
         },
-        child: Scaffold(
+        child: Builder(builder: (context) {
+          final resState = context.watch<ResearcherBloc>().state;
+          final activeCount = resState is ActiveContractsLoaded ? resState.contracts.length : 0;
+          return Scaffold(
           body: NestedScrollView(
           headerSliverBuilder: (ctx, _) => [
             SliverAppBar(
@@ -196,13 +201,18 @@ class _ResearcherShellState extends State<ResearcherShell> {
                 label: 'New Request',
               ),
               NavigationDestination(
-                icon: Icon(Icons.science_outlined),
-                selectedIcon: Icon(Icons.science),
+                icon: Badge(
+                  isLabelVisible: activeCount > 0 && _tab != 2,
+                  label: Text('$activeCount'),
+                  child: const Icon(Icons.science_outlined),
+                ),
+                selectedIcon: const Icon(Icons.science),
                 label: 'My Contracts',
               ),
             ],
           ),
         ), // Scaffold
+        }), // Builder
       ), // BlocListener
     ); // BlocProvider
   }

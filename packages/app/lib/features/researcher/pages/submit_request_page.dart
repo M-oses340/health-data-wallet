@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../bloc/researcher_bloc.dart';
@@ -71,10 +72,54 @@ class _SubmitRequestPageState extends State<SubmitRequestPage> {
     return BlocListener<ResearcherBloc, ResearcherState>(
       listener: (context, state) {
         if (state is RequestSubmitted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Contract created: ${state.contractId}'),
-              backgroundColor: Colors.green,
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              icon: const Icon(Icons.check_circle, color: Colors.green, size: 40),
+              title: const Text('Request Submitted'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Your computation request is pending patient consent.'),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            state.contractId,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 16),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: state.contractId));
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Contract ID copied')),
+                            );
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Done'),
+                ),
+              ],
             ),
           );
         }
