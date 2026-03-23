@@ -12,6 +12,7 @@ import { PlatformOrchestrator } from './orchestrator/PlatformOrchestrator';
 import { buildChainAdapters } from './chain/ContractAdapters';
 import { DataType, ComputationMethod } from '@health-data/sdk';
 import { db } from './db';
+import { ComplianceService } from './compliance/ComplianceService';
 
 // ---------------------------------------------------------------------------
 // Service singletons
@@ -72,6 +73,66 @@ const orchestrator = new PlatformOrchestrator(
   walletService, profileRepo, vaultService, anonymizerAdapter,
   marketplace, computationEngine, auditTrail, consentManager, onChainPaymentRouter,
 );
+
+// ---------------------------------------------------------------------------
+// ComplianceService — scope enforcement + GDPR
+// ---------------------------------------------------------------------------
+
+const complianceService = new ComplianceService(
+  auditTrail,
+  profileRepo,
+  {
+    async getPermittedScope(contractId: string) {
+      const row = db.prepare(
+        `SELECT permitted_scope FROM computation_requests WHERE contract_id = ? AND status = 'ACTIVE'`
+      ).get(contractId) as { permitted_scope: string } | undefined;
+      return row?.permitted_scope ?? null;
+    },
+    async invalidateContract(contractId: string) {
+      db.prepare(`UPDATE computation_requests SET status = 'REVOKED' WHERE contract_id = ?`).run(contractId);
+    },
+    async getActiveContractIds(_patientDID: string) {
+      const rows = db.prepare(
+        `SELECT contract_id FROM computation_requests WHERE status = 'ACTIVE'`
+      ).all() as { contract_id: string }[];
+      return rows.map(r => r.contract_id);
+    },
+  },
+  {
+    async deleteByPatient(patientDID: string) {
+      const result = db.prepare(`DELETE FROM vault_records WHERE patient_did = ?`).run(patientDID);
+      db.prepare(`UPDATE patient_profiles SET data_references = '[]' WHERE did = ?`).run(patientDID);
+      return result.changes;
+    },
+  },
+  {
+    async getByPatient(_patientDID: string) { return []; },
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Contract expiry watcher — runs every 60 seconds
+// ---------------------------------------------------------------------------
+
+setInterval(async () => {
+  try {
+    const rows = db.prepare(
+      `SELECT DISTINCT patient_did FROM computation_requests WHERE status = 'ACTIVE'`
+    ).all() as { patient_did: string }[];
+    for (const { patient_did } of rows) {
+      const result = await orchestrator.checkAndExpireContracts(patient_did);
+      if (result.expired.length > 0) {
+        const placeholders = result.expired.map(() => '?').join(',');
+        db.prepare(
+          `UPDATE computation_requests SET status = 'EXPIRED' WHERE contract_id IN (${placeholders})`
+        ).run(...result.expired);
+        console.log(`[expiry] Expired contracts: ${result.expired.join(', ')}`);
+      }
+    }
+  } catch (e) {
+    console.warn('[expiry] watcher error:', (e as Error).message);
+  }
+}, 60_000);
 
 // ---------------------------------------------------------------------------
 // JWT helpers (HS256)
@@ -341,7 +402,19 @@ app.post('/computation/run', requireAuth, requireRole('researcher'), async (req,
   const { contractId, patientDID } = req.body as { contractId?: string; patientDID?: string };
   if (!contractId || !patientDID) { res.status(400).json({ error: 'contractId and patientDID required' }); return; }
   try {
+    // Scope check before computation
+    const row = db.prepare(
+      `SELECT permitted_scope FROM computation_requests WHERE contract_id = ?`
+    ).get(contractId) as { permitted_scope: string } | undefined;
+    if (row) {
+      const scopeResult = await complianceService.checkScope(contractId, row.permitted_scope, patientDID);
+      if (!scopeResult.allowed) {
+        res.status(403).json({ error: scopeResult.violationReason }); return;
+      }
+    }
     const result = await orchestrator.runComputation(contractId, patientDID);
+    // Mark contract COMPLETED after successful computation + payment
+    db.prepare(`UPDATE computation_requests SET status = 'COMPLETED' WHERE contract_id = ?`).run(contractId);
     const job = computationEngine.getJob(result.jobId);
     res.status(201).json({ job });
   } catch (e: unknown) {
@@ -423,7 +496,41 @@ app.post('/consent/revoke', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'contractId and patientDID required' }); return;
   }
   try {
+    db.prepare(`UPDATE computation_requests SET status = 'REVOKED' WHERE contract_id = ?`).run(contractId);
     res.json(await orchestrator.revokeConsent(contractId, patientDID));
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// ── GDPR ──────────────────────────────────────────────────────────────────
+
+// Right to Erasure — deletes all vault data and invalidates active contracts
+app.delete('/patient/data', requireAuth, async (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
+  try {
+    const result = await complianceService.handleErasureRequest(did);
+    res.json(result);
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// Right of Access — exports all data held about the patient
+app.get('/patient/export', requireAuth, async (req, res) => {
+  const did = req.query['did'] as string;
+  if (!did) { res.status(400).json({ error: 'did query param required' }); return; }
+  try {
+    const result = await complianceService.handleAccessRequest(did);
+    res.setHeader('Content-Disposition', `attachment; filename="data-export-${Date.now()}.json"`);
+    res.json({
+      ...result,
+      auditTrail: result.auditTrail.map(e => ({
+        ...e,
+        amount: e.amount != null ? e.amount.toString() : undefined,
+      })),
+    });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
   }
