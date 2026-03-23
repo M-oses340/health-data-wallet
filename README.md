@@ -205,8 +205,10 @@ HARDHAT_RPC_URL=http://127.0.0.1:8545
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/patient/profile?did=` | Bearer | Profile + data reference count |
-| GET | `/patient/payments?did=` | Bearer | Dividend payment history |
+| GET | `/patient/payments?did=` | Bearer | Dividend payment history (amounts in ETH) |
 | GET | `/patient/audit-trail?did=` | Bearer | Full immutable audit log |
+| GET | `/patient/export?did=` | Bearer | GDPR right of access — full data export (JSON download) |
+| DELETE | `/patient/data?did=` | Bearer | GDPR right to erasure — deletes vault data + invalidates contracts |
 
 ### Vault
 
@@ -226,13 +228,16 @@ HARDHAT_RPC_URL=http://127.0.0.1:8545
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/computation/run` | Bearer (researcher) | Trigger FL or ZKP computation for an accepted contract (requires active on-chain consent) |
+| GET | `/computation/active` | Bearer (researcher) | List ACTIVE contracts (patient has granted consent) |
+| POST | `/computation/run` | Bearer (researcher) | Trigger FL or ZKP computation — scope check → compute → dividend → COMPLETED |
 
 ### Consent
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/consent/revoke` | Bearer | Revoke active consent contract |
+| GET | `/consent/pending` | Bearer | List pending consent requests shown to patient |
+| POST | `/consent/grant` | Bearer | Patient grants consent — creates + signs on-chain contract, status → ACTIVE |
+| POST | `/consent/revoke` | Bearer | Revoke active consent — status → REVOKED, triggers escrow refund |
 
 ### Other
 
@@ -344,11 +349,18 @@ If the FL server is unreachable, `ComputationEngine` falls back to simulated gra
 ```
 POST /marketplace/requests  →  ACCEPTED + contractId
                                     │
-                          (patients grant on-chain consent)
+                          (patient sees request in Consents tab)
                                     │
-                                    ▼
-POST /computation/run  →  consent check → FL/ZKP → dividend payment → job result
+                          POST /consent/grant  →  ACTIVE
+                                    │
+                          (researcher sees contract in My Contracts tab)
+                                    │
+POST /computation/run  →  scope check → FL/ZKP → dividend payment → COMPLETED
+                                    │
+                          (patient sees payment in Payments tab)
 ```
+
+Contract expiry is enforced automatically — a background watcher runs every 60 seconds and marks expired contracts as `EXPIRED` in both the DB and on-chain.
 
 ---
 
@@ -395,8 +407,9 @@ All platform state is stored in a single SQLite database (`better-sqlite3`, WAL 
 |---|---|
 | `patient_profiles` | DID, wallet address, public key, data references |
 | `researcher_profiles` | DID, wallet address, public key, organisation |
-| `vault_records` | CID, patient DID, encrypted blobs (iv, authTag, encryptedKey, ciphertext), plaintext for FL |
+| `vault_records` | CID, patient DID, encrypted blobs (iv, authTag, encryptedKey, ciphertext) |
 | `marketplace_listings` | Category, data type, quality score, available methods |
+| `computation_requests` | Contract ID, researcher DID, scope, dividend, status (ACCEPTED → ACTIVE → COMPLETED / REVOKED / EXPIRED) |
 | `audit_trail` | Immutable event log — consent, uploads, computations, payments |
 
 The database path is controlled by `DB_PATH` (default: `./data/platform.db`). Vault records persist across container restarts via the `api_data` Docker volume.
@@ -428,12 +441,14 @@ cd packages/fl-server && python -m pytest tests/ -v
 ```
 BiometricAuthPage → RoleSelectPage
     ├── Patient → PatientShell
-    │               ├── Payments tab    (earnings + history)
+    │               ├── Payments tab    (earnings history, ETH amounts, revoke consent)
     │               ├── Audit Trail tab (timeline of all data events)
-    │               └── Upload tab      (submit heart rate / SpO₂ / temperature)
+    │               ├── Upload tab      (submit heart rate / SpO₂ / temperature)
+    │               └── Consents tab    (pending requests — approve or deny)
     └── Researcher → ResearcherShell
-                        ├── Datasets tab   (search + filter marketplace)
-                        └── New Request    (submit computation contract)
+                        ├── Datasets tab    (search + filter marketplace)
+                        ├── New Request     (submit computation contract)
+                        └── My Contracts   (ACTIVE contracts — trigger computation)
 ```
 
 The `ApiClient` (`packages/app/lib/core/api_client.dart`) connects to the live API. Set the base URL at build time:
